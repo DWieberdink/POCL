@@ -14,12 +14,10 @@ export default function SearchPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [practiceArea, setPracticeArea] = useState("")
   const [region, setRegion] = useState("")
-  const [experienceLevel, setExperienceLevel] = useState("")
   const [selectedExpertise, setSelectedExpertise] = useState<string[]>([])
 
   const practiceAreas = ["Healthcare", "Education", "Commercial", "Residential", "Mixed-Use", "Hospitality"]
   const regions = ["East", "West", "Central", "International", "Northeast", "Southeast", "Southwest", "Northwest"]
-  const experienceLevels = ["Junior (0-3 years)", "Mid-level (4-8 years)", "Senior (9+ years)", "Principal (15+ years)"]
   const expertiseAreas = [
     "Design",
     "Project Management",
@@ -43,7 +41,6 @@ export default function SearchPage() {
     if (searchTerm) searchParams.set("q", searchTerm)
     if (practiceArea) searchParams.set("practice", practiceArea)
     if (region) searchParams.set("region", region)
-    if (experienceLevel) searchParams.set("experience", experienceLevel)
     if (selectedExpertise.length > 0) searchParams.set("expertise", selectedExpertise.join(","))
 
     window.location.href = `/results?${searchParams.toString()}`
@@ -53,11 +50,10 @@ export default function SearchPage() {
     setSearchTerm("")
     setPracticeArea("")
     setRegion("")
-    setExperienceLevel("")
     setSelectedExpertise([])
   }
 
-  const hasActiveFilters = searchTerm || practiceArea || region || experienceLevel || selectedExpertise.length > 0
+  const hasActiveFilters = searchTerm || practiceArea || region || selectedExpertise.length > 0
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -129,23 +125,6 @@ export default function SearchPage() {
                     {regions.map((reg) => (
                       <SelectItem key={reg} value={reg}>
                         {reg}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Experience Level */}
-              <div>
-                <Label className="text-base font-medium">Experience Level</Label>
-                <Select value={experienceLevel} onValueChange={setExperienceLevel}>
-                  <SelectTrigger className="h-12 mt-2">
-                    <SelectValue placeholder="Select experience level" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {experienceLevels.map((level) => (
-                      <SelectItem key={level} value={level}>
-                        {level}
                       </SelectItem>
                     ))}
                   </SelectContent>

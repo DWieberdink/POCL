@@ -19,8 +19,8 @@ export default function LandingPage() {
       <div className="container mx-auto px-4 py-6">
         {/* Header */}
         <header className="text-center mb-8">
-          <div className="flex items-center justify-center mb-4">
-            <Users className="h-10 w-10 text-blue-600 mr-3" />
+          <div className="flex flex-col items-center justify-center mb-4">
+            <img src="/PE Logo.png" alt="Perkins Eastman Logo" className="mb-2 w-40 h-auto" />
             <h1 className="text-2xl font-bold text-gray-900">PE Connect</h1>
           </div>
         </header>
