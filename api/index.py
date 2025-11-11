@@ -1,29 +1,24 @@
-# Minimal test handler - test if handler works at all
-import sys
-
-# Write to stderr which should be captured
-sys.stderr.write("=" * 60 + "\n")
-sys.stderr.write("MINIMAL HANDLER TEST\n")
-sys.stderr.write(f"Python version: {sys.version}\n")
-sys.stderr.write("=" * 60 + "\n")
+# Vercel Python serverless function handler
+# Vercel's @vercel/python runtime expects a specific format
 
 def handler(request):
-    """Minimal test handler"""
+    """
+    Vercel Python handler
+    The request object is a WSGI-like environ dict
+    """
     try:
-        sys.stderr.write("Handler called!\n")
+        # Return a simple response
         return {
             'statusCode': 200,
-            'headers': {'Content-Type': 'text/plain'},
-            'body': 'Hello from Vercel! Handler is working.'
+            'headers': {
+                'Content-Type': 'text/html; charset=utf-8'
+            },
+            'body': '<!DOCTYPE html><html><head><title>Test</title></head><body><h1>Hello from Vercel!</h1><p>Handler is working.</p></body></html>'
         }
     except Exception as e:
         import traceback
-        error_msg = str(e)
-        traceback_str = traceback.format_exc()
-        sys.stderr.write(f"ERROR: {error_msg}\n")
-        sys.stderr.write(traceback_str + "\n")
         return {
             'statusCode': 500,
             'headers': {'Content-Type': 'text/plain'},
-            'body': f'Error: {error_msg}'
+            'body': f'Error: {str(e)}\n{traceback.format_exc()}'
         }
