@@ -57,38 +57,45 @@ async function downloadFromOneDrive(url: string, accessToken?: string): Promise<
 async function downloadFromSharePointViaGraph(url: string, accessToken: string): Promise<string> {
   // Convert SharePoint URL to Graph API format
   // SharePoint URL format: https://{tenant}-my.sharepoint.com/:x:/r/personal/{user}/{path}/file.csv?d=...&web=1&e=...
-  // Graph API format: https://graph.microsoft.com/v1.0/sites/{hostname}:/{server-relative-path}:/content
+  // Graph API format: https://graph.microsoft.com/v1.0/me/drive/root:/{relative-path}:/content
   
   try {
     // Extract the base URL and path from SharePoint URL
     const urlObj = new URL(url.split('?')[0]); // Remove query parameters
     const hostname = urlObj.hostname; // e.g., perkinseastman-my.sharepoint.com
     
-    // Extract the path - SharePoint URLs have format: /:x:/r/personal/.../file.csv
+    // Extract the path - SharePoint URLs have format: /:x:/r/personal/{user}/Documents/.../file.csv
     let serverRelativePath = urlObj.pathname;
     
     // Remove the /:x:/r part and get the actual path
     // Format: /:x:/r/personal/{user}/Documents/Temp/api_test/Data/file.csv
     const pathMatch = serverRelativePath.match(/\/:x:\/r\/(.+)$/);
     if (pathMatch) {
-      serverRelativePath = '/' + pathMatch[1];
+      let fullPath = pathMatch[1];
+      
+      // For personal OneDrive, remove /personal/{user} prefix to get relative path
+      // personal/g_dsouza_perkinseastman_com/Documents/... -> Documents/...
+      const personalMatch = fullPath.match(/^personal\/[^\/]+\/(.+)$/);
+      if (personalMatch) {
+        serverRelativePath = personalMatch[1];
+      } else {
+        serverRelativePath = fullPath;
+      }
     }
     
-    // Encode the path for Graph API
-    const encodedPath = encodeURIComponent(serverRelativePath);
-    
     // Construct Graph API URL
-    // For OneDrive personal: /me/drive/root:/{path}:/content
-    // For SharePoint site: /sites/{hostname}:/{path}:/content
+    // For OneDrive personal: /me/drive/root:/{relative-path}:/content
     let graphUrl: string;
     
     if (hostname.includes('-my.sharepoint.com')) {
-      // Personal OneDrive
-      graphUrl = `https://graph.microsoft.com/v1.0/me/drive/root:${serverRelativePath}:/content`;
+      // Personal OneDrive - use /me/drive/root endpoint
+      graphUrl = `https://graph.microsoft.com/v1.0/me/drive/root:/${serverRelativePath}:/content`;
     } else {
-      // SharePoint site
+      // SharePoint site - use /sites endpoint
       graphUrl = `https://graph.microsoft.com/v1.0/sites/${hostname}:${serverRelativePath}:/content`;
     }
+    
+    console.log('Graph API URL:', graphUrl);
     
     const response = await fetch(graphUrl, {
       headers: {
