@@ -22,6 +22,13 @@ CORS(app, supports_credentials=True)
 # Get the directory where this script is located
 APP_ROOT = Path(__file__).parent.absolute()
 CSV_DATA_DIR = APP_ROOT / "Data"
+
+# OneDrive URLs (if set, will download from OneDrive instead of local files)
+ONEDRIVE_EMPLOYEES_URL = os.environ.get('ONEDRIVE_EMPLOYEES_URL', '')
+ONEDRIVE_PROJECTS_URL = os.environ.get('ONEDRIVE_PROJECTS_URL', '')
+ONEDRIVE_PROJECT_EMPLOYEES_URL = os.environ.get('ONEDRIVE_PROJECT_EMPLOYEES_URL', '')
+
+# Local CSV paths (fallback if OneDrive URLs not set)
 EMPLOYEES_CSV = CSV_DATA_DIR / "employees.csv"
 PROJECTS_CSV = CSV_DATA_DIR / "projects.csv"
 PROJECT_EMPLOYEES_CSV = CSV_DATA_DIR / "project_employees.csv"
