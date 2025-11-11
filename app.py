@@ -116,37 +116,51 @@ def load_csv_data():
         employees_data = []
     
     # Load projects
-    if PROJECTS_CSV.exists():
-        with open(PROJECTS_CSV, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            projects_data = list(reader)
-            # Convert id to int for consistency
-            for proj in projects_data:
-                try:
-                    proj['id'] = int(proj.get('id', 0))
-                except (ValueError, TypeError):
-                    proj['id'] = 0
-        print(f"Loaded {len(projects_data)} projects from CSV")
-    else:
-        print(f"Warning: {PROJECTS_CSV} not found")
+    try:
+        if projects_file and (isinstance(projects_file, Path) and projects_file.exists() or isinstance(projects_file, str)):
+            print(f"Reading projects from: {projects_file}")
+            with open(projects_file, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                projects_data = list(reader)
+                # Convert id to int for consistency
+                for proj in projects_data:
+                    try:
+                        proj['id'] = int(proj.get('id', 0))
+                    except (ValueError, TypeError):
+                        proj['id'] = 0
+            print(f"Loaded {len(projects_data)} projects from CSV")
+        else:
+            print(f"Warning: Projects CSV not found")
+            projects_data = []
+    except Exception as e:
+        print(f"ERROR loading projects CSV: {e}")
+        import traceback
+        traceback.print_exc()
         projects_data = []
     
     # Load project-employee relationships
-    if PROJECT_EMPLOYEES_CSV.exists():
-        with open(PROJECT_EMPLOYEES_CSV, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            project_employees_data = list(reader)
-            # Convert IDs to int
-            for rel in project_employees_data:
-                try:
-                    rel['ProjectID'] = int(rel.get('ProjectID', 0))
-                    rel['EmployeeID'] = int(rel.get('EmployeeID', 0))
-                except (ValueError, TypeError):
-                    rel['ProjectID'] = 0
-                    rel['EmployeeID'] = 0
-        print(f"Loaded {len(project_employees_data)} project-employee relationships from CSV")
-    else:
-        print(f"Warning: {PROJECT_EMPLOYEES_CSV} not found")
+    try:
+        if project_employees_file and (isinstance(project_employees_file, Path) and project_employees_file.exists() or isinstance(project_employees_file, str)):
+            print(f"Reading project-employees from: {project_employees_file}")
+            with open(project_employees_file, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                project_employees_data = list(reader)
+                # Convert IDs to int
+                for rel in project_employees_data:
+                    try:
+                        rel['ProjectID'] = int(rel.get('ProjectID', 0))
+                        rel['EmployeeID'] = int(rel.get('EmployeeID', 0))
+                    except (ValueError, TypeError):
+                        rel['ProjectID'] = 0
+                        rel['EmployeeID'] = 0
+            print(f"Loaded {len(project_employees_data)} project-employee relationships from CSV")
+        else:
+            print(f"Warning: Project-employees CSV not found")
+            project_employees_data = []
+    except Exception as e:
+        print(f"ERROR loading project-employees CSV: {e}")
+        import traceback
+        traceback.print_exc()
         project_employees_data = []
 
 # Load CSV data at startup
