@@ -190,8 +190,24 @@ def load_csv_data():
         traceback.print_exc()
         project_employees_data = []
 
-# Load CSV data at startup
-load_csv_data()
+# Load CSV data on startup (only if not in serverless environment)
+# In serverless, data will be loaded on first request via ensure_data_loaded()
+try:
+    # Only load if we have OneDrive URLs or local files exist
+    # This prevents crashes in serverless environments where files don't exist yet
+    if ONEDRIVE_EMPLOYEES_URL or ONEDRIVE_PROJECTS_URL or ONEDRIVE_PROJECT_EMPLOYEES_URL:
+        # OneDrive URLs are set, try to load
+        load_csv_data()
+    elif EMPLOYEES_CSV.exists() and PROJECTS_CSV.exists() and PROJECT_EMPLOYEES_CSV.exists():
+        # Local files exist, try to load
+        load_csv_data()
+    else:
+        # No data source available yet, will load on first request
+        print("No CSV data source available at startup. Data will be loaded on first request.")
+except Exception as e:
+    # Don't crash on import - data will be loaded on first request
+    print(f"Could not load CSV data at startup: {e}")
+    print("Data will be loaded on first request via ensure_data_loaded()")
 
 def ensure_data_loaded():
     """Ensure CSV data is loaded (handles Flask debug reloader issue)"""
