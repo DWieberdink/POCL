@@ -57,3 +57,15 @@ Thumbs.db
 # Azure AD secrets (should be in environment variables)
 # Never commit these!
 
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Next.js
+.next/
+out/
+build/
+dist/
