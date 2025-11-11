@@ -341,6 +341,8 @@ def _get_token_from_cache(scope=None):
 
 def _load_cache():
     """Load token cache from session"""
+    if not MSAL_AVAILABLE:
+        return None
     if not AZURE_CLIENT_ID or not AZURE_TENANT_ID:
         return None
     try:
