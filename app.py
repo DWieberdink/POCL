@@ -285,37 +285,57 @@ def _build_msal_app(cache=None, authority=None):
     """Build MSAL application"""
     if not AZURE_CLIENT_ID or not AZURE_TENANT_ID:
         return None
-    return msal.ConfidentialClientApplication(
-        AZURE_CLIENT_ID,
-        authority=authority or AZURE_AUTHORITY,
-        client_credential=AZURE_CLIENT_SECRET if AZURE_CLIENT_SECRET else None,
-        token_cache=cache,
-    )
+    try:
+        return msal.ConfidentialClientApplication(
+            AZURE_CLIENT_ID,
+            authority=authority or AZURE_AUTHORITY,
+            client_credential=AZURE_CLIENT_SECRET if AZURE_CLIENT_SECRET else None,
+            token_cache=cache,
+        )
+    except Exception as e:
+        print(f"Error building MSAL app: {e}")
+        return None
 
 def _get_token_from_cache(scope=None):
     """Get token from cache"""
-    cache = _load_cache()
-    cca = _build_msal_app(cache=cache)
-    if not cca:
+    if not AZURE_CLIENT_ID or not AZURE_TENANT_ID:
         return None
-    accounts = cca.get_accounts()
-    if accounts:
-        result = cca.acquire_token_silent(scope or AZURE_SCOPE, account=accounts[0])
-        _save_cache(cache)
-        return result
+    try:
+        cache = _load_cache()
+        cca = _build_msal_app(cache=cache)
+        if not cca:
+            return None
+        accounts = cca.get_accounts()
+        if accounts:
+            result = cca.acquire_token_silent(scope or AZURE_SCOPE, account=accounts[0])
+            _save_cache(cache)
+            return result
+    except Exception as e:
+        print(f"Error getting token from cache: {e}")
     return None
 
 def _load_cache():
     """Load token cache from session"""
-    cache = msal.SerializableTokenCache()
-    if session.get("token_cache"):
-        cache.deserialize(session["token_cache"])
-    return cache
+    if not AZURE_CLIENT_ID or not AZURE_TENANT_ID:
+        return None
+    try:
+        cache = msal.SerializableTokenCache()
+        if session.get("token_cache"):
+            cache.deserialize(session["token_cache"])
+        return cache
+    except Exception as e:
+        print(f"Error loading cache: {e}")
+        return None
 
 def _save_cache(cache):
     """Save token cache to session"""
-    if cache.has_state_changed:
-        session["token_cache"] = cache.serialize()
+    if not cache or not AZURE_CLIENT_ID or not AZURE_TENANT_ID:
+        return
+    try:
+        if cache.has_state_changed:
+            session["token_cache"] = cache.serialize()
+    except Exception as e:
+        print(f"Error saving cache: {e}")
 
 def login_required(f):
     """Decorator to require authentication"""
@@ -383,19 +403,31 @@ def login():
     if not AZURE_CLIENT_ID or not AZURE_TENANT_ID:
         # If Azure AD not configured, allow access
         return redirect(url_for('index'))
-    
-    session["flow"] = _build_auth_code_flow(scopes=AZURE_SCOPE)
-    return redirect(session["flow"]["auth_uri"])
+    try:
+        flow = _build_auth_code_flow(scopes=AZURE_SCOPE)
+        if not flow:
+            return redirect(url_for('index'))
+        session["flow"] = flow
+        return redirect(session["flow"]["auth_uri"])
+    except Exception as e:
+        print(f"Error in login: {e}")
+        return redirect(url_for('index'))
 
 def _build_auth_code_flow(authority=None, scopes=None):
     """Build authorization code flow"""
-    cca = _build_msal_app(authority=authority)
-    if not cca:
+    if not AZURE_CLIENT_ID or not AZURE_TENANT_ID:
         return None
-    return cca.initiate_auth_code_flow(
-        scopes or AZURE_SCOPE,
-        redirect_uri=url_for("authorized", _external=True)
-    )
+    try:
+        cca = _build_msal_app(authority=authority)
+        if not cca:
+            return None
+        return cca.initiate_auth_code_flow(
+            scopes or AZURE_SCOPE,
+            redirect_uri=url_for("authorized", _external=True)
+        )
+    except Exception as e:
+        print(f"Error building auth code flow: {e}")
+        return None
 
 @app.route('/getAToken')
 def authorized():
@@ -468,21 +500,24 @@ def get_sub_practice_areas():
 @app.route('/api/user')
 def get_user():
     """Get current user info"""
-    # If Azure AD is not configured, return not authenticated
+    # If Azure AD is not configured, return not authenticated (but don't error)
     if not AZURE_CLIENT_ID or not AZURE_TENANT_ID:
-        return jsonify({"authenticated": False}), 401
-    
-    # Check if user is authenticated
-    token = _get_token_from_cache()
-    if not token or "error" in token:
-        return jsonify({"authenticated": False}), 401
-    
-    user = session.get("user", {})
-    return jsonify({
-        "name": user.get("name", "Unknown"),
-        "email": user.get("preferred_username", user.get("email", "Unknown")),
-        "authenticated": True
-    })
+        return jsonify({"authenticated": False}), 200
+    try:
+        # Check if user is authenticated
+        token = _get_token_from_cache()
+        if not token or "error" in token:
+            return jsonify({"authenticated": False}), 200
+        
+        user = session.get("user", {})
+        return jsonify({
+            "name": user.get("name", "Unknown"),
+            "email": user.get("preferred_username", user.get("email", "Unknown")),
+            "authenticated": True
+        })
+    except Exception as e:
+        print(f"Error in get_user: {e}")
+        return jsonify({"authenticated": False}), 200
 
 @app.route('/api/test')
 def test_api():
