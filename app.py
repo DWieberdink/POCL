@@ -11,8 +11,15 @@ from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.utils import get_column_letter
 import io
 from functools import wraps
-import msal
 import uuid
+
+# Optional imports - don't crash if these aren't available
+try:
+    import msal
+    MSAL_AVAILABLE = True
+except ImportError:
+    MSAL_AVAILABLE = False
+    print("Warning: msal not available. Azure AD authentication will be disabled.")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', os.urandom(24).hex())  # Change this in production!
@@ -299,6 +306,8 @@ def _build_openasset_url(size_obj: dict):
 # ---- Azure AD Authentication Functions ----
 def _build_msal_app(cache=None, authority=None):
     """Build MSAL application"""
+    if not MSAL_AVAILABLE:
+        return None
     if not AZURE_CLIENT_ID or not AZURE_TENANT_ID:
         return None
     try:
