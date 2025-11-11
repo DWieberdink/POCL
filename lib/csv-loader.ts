@@ -45,27 +45,53 @@ let projectEmployeesData: ProjectEmployee[] = [];
 let dataLoadPromise: Promise<void> | null = null;
 
 async function downloadFromOneDrive(url: string): Promise<string> {
-  // Convert SharePoint link to direct download if needed
+  // Convert SharePoint link to direct download format
+  // SharePoint URLs format: .../Documents/.../file.csv?d=...&csf=1&web=1&e=...
+  // Need to convert to: .../Documents/.../file.csv?download=1
+  
   let downloadUrl = url;
+  
+  // Remove web=1 and e= parameters, add download=1
   if (url.includes('web=1')) {
-    downloadUrl = url.replace('web=1', 'download=1');
-  } else if (!url.includes('download=1') && !url.includes('web=1')) {
+    downloadUrl = url.replace(/[?&]web=1/g, '').replace(/[?&]e=[^&]*/g, '').replace(/[?&]csf=1/g, '');
+    // Clean up any double ? or &
+    downloadUrl = downloadUrl.replace(/\?&/, '?').replace(/&+/g, '&').replace(/\?$/, '');
+    // Add download=1
+    const separator = downloadUrl.includes('?') ? '&' : '?';
+    downloadUrl = `${downloadUrl}${separator}download=1`;
+  } else if (!url.includes('download=1')) {
+    // If no web=1, try adding download=1
     const separator = url.includes('?') ? '&' : '?';
     downloadUrl = `${url}${separator}download=1`;
   }
 
   const response = await fetch(downloadUrl, {
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'text/csv,text/plain,*/*',
+      'Accept-Language': 'en-US,en;q=0.9'
     },
-    cache: 'no-store' // Don't cache CSV files
+    cache: 'no-store', // Don't cache CSV files
+    redirect: 'follow'
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to download CSV: ${response.statusText}`);
+    const errorText = await response.text();
+    // Check if we got HTML instead of CSV
+    if (errorText.includes('<html') || errorText.includes('<!DOCTYPE')) {
+      throw new Error(`SharePoint returned HTML instead of CSV. This usually means authentication is required. URL: ${downloadUrl.substring(0, 100)}...`);
+    }
+    throw new Error(`Failed to download CSV: ${response.status} ${response.statusText}`);
   }
 
-  return await response.text();
+  const content = await response.text();
+  
+  // Check if response is HTML (authentication page)
+  if (content.trim().startsWith('<!DOCTYPE') || content.trim().startsWith('<html') || content.includes('<!-- Copyright (C) Microsoft Corporation')) {
+    throw new Error(`SharePoint authentication required. The URL returned an HTML page instead of CSV. Please check that the SharePoint links are publicly accessible or use direct download links.`);
+  }
+
+  return content;
 }
 
 async function loadCSVData() {
