@@ -1,161 +1,132 @@
-# Perkins Eastman Employee Directory
+# POCL - Perkins Eastman Employee Directory
 
-A responsive web application for searching and viewing employee information at Perkins Eastman, built with Flask and React.
+A modern, responsive web application for searching and viewing employee information at Perkins Eastman, built with Next.js and React.
 
 ## Features
 
 - 🔍 **Advanced Search**: Search employees by name, filters, and multiple criteria
-- 📊 **Filter Options**: Filter by project details (practice area, sub-practice area, region) and people details (studio, experience, title, job title)
+- 📊 **Filter Options**: 
+  - Filter by Project Details (practice area, sub-practice area, region)
+  - Filter by People Details (studio, experience, title, job title)
 - 📱 **Responsive Design**: Works seamlessly on desktop, tablet, and mobile devices
-- 🔐 **Azure AD Authentication**: Secure login using Microsoft/Azure AD for Perkins Eastman employees
 - 📈 **Excel Export**: Export search results to Excel
 - 👤 **Employee Profiles**: View detailed employee information and project history
 
 ## Tech Stack
 
-- **Backend**: Flask (Python)
-- **Frontend**: React 18
-- **Authentication**: Microsoft Azure AD (MSAL)
-- **Data Source**: CSV files (employees.csv, projects.csv, project_employees.csv)
-- **Export**: openpyxl for Excel generation
+- **Frontend**: Next.js 15, React 19, TypeScript
+- **Backend**: Next.js API Routes
+- **Data Source**: CSV files from OneDrive/SharePoint
+- **Export**: ExcelJS for Excel generation
+- **Styling**: CSS with Font Awesome icons
 
 ## Setup Instructions
 
 ### Prerequisites
 
-- Python 3.8 or higher
-- pip (Python package manager)
+- Node.js 18+ and npm
+- OneDrive/SharePoint URLs for CSV files (configured via environment variables)
 
 ### Installation
 
-1. **Clone the repository**
+1. Clone the repository
    ```bash
    git clone <repository-url>
    cd <repository-name>
    ```
 
-2. **Install Python dependencies**
+2. Install dependencies
    ```bash
-   pip install -r requirements.txt
+   npm install
    ```
 
-3. **Set up Azure AD Authentication** (Optional but recommended for production)
-
-   Create a `.env` file in the root directory with your Azure AD credentials:
+3. Set up environment variables
+   
+   Create a `.env.local` file in the root directory:
    ```
-   AZURE_CLIENT_ID=your-client-id
-   AZURE_CLIENT_SECRET=your-client-secret
-   AZURE_TENANT_ID=your-tenant-id
-   FLASK_SECRET_KEY=your-secret-key
+   ONEDRIVE_EMPLOYEES_URL=https://...
+   ONEDRIVE_PROJECTS_URL=https://...
+   ONEDRIVE_PROJECT_EMPLOYEES_URL=https://...
    ```
 
-   **Note**: If Azure AD is not configured, the application will run without authentication (for development only).
-
-   See `AZURE_AD_SETUP.md` for detailed Azure AD setup instructions.
-
-4. **Add CSV Data Files**
-
-   Place your CSV files in the `Data/` directory:
-   - `Data/employees.csv`
-   - `Data/projects.csv`
-   - `Data/project_employees.csv`
-
-5. **Run the application**
+4. Run the development server
    ```bash
-   python app.py
+   npm run dev
    ```
 
-6. **Access the application**
-
-   Open your browser and navigate to:
-   ```
-   http://localhost:5000
-   ```
+5. Open [http://localhost:3000](http://localhost:3000) in your browser
 
 ## Project Structure
 
 ```
 .
-├── app.py                 # Flask backend application
-├── requirements.txt       # Python dependencies
-├── templates/
-│   └── index.html        # Main HTML template
-├── static/
-│   ├── css/
-│   │   └── style.css     # Stylesheet
-│   ├── js/
-│   │   ├── app.js        # Original vanilla JS (legacy)
-│   │   └── app-react.jsx # React application
-│   └── pe-logo.png       # Perkins Eastman logo
-├── Data/                 # CSV data files (not in repo)
-│   ├── employees.csv
-│   ├── projects.csv
-│   └── project_employees.csv
-└── README.md
+├── app/
+│   ├── api/              # Next.js API routes
+│   │   ├── employees/
+│   │   ├── practice-areas/
+│   │   ├── sub-practice-areas/
+│   │   ├── employee/[id]/projects/
+│   │   └── export/employees/
+│   ├── page.tsx          # Main page component
+│   ├── layout.tsx        # Root layout
+│   └── employee-directory.css  # Styles
+├── components/           # React components
+│   ├── MultiSelect.tsx
+│   ├── FilterSection.tsx
+│   ├── EmployeeCard.tsx
+│   └── EmployeeModal.tsx
+├── lib/
+│   └── csv-loader.ts     # CSV loading utilities
+├── public/               # Static assets
+└── package.json
 ```
 
-## Configuration
+## Deployment
 
-### Azure AD Setup
+### Vercel (Recommended)
 
-1. Register your application in Azure Portal
-2. Get your Client ID, Client Secret, and Tenant ID
-3. Set up redirect URI: `http://localhost:5000/getAToken` (for local development)
-4. Add environment variables (see Setup Instructions above)
+1. Push your code to GitHub
+2. Import your repository in Vercel
+3. Add environment variables in Vercel dashboard:
+   - `ONEDRIVE_EMPLOYEES_URL`
+   - `ONEDRIVE_PROJECTS_URL`
+   - `ONEDRIVE_PROJECT_EMPLOYEES_URL`
+4. Deploy!
 
-For detailed instructions, see `AZURE_AD_SETUP.md`.
+Vercel will automatically detect Next.js and deploy your application.
 
-### CSV File Format
+### Other Platforms
 
-The application expects CSV files with specific columns:
+This Next.js application can be deployed to:
+- **Vercel** (recommended - zero config)
+- **Netlify**
+- **Railway**
+- **Render**
+- Any platform that supports Next.js
 
-**employees.csv**:
-- id (or EmployeeID)
-- first_name
-- last_name
-- email
-- title
-- job_title
-- office
-- phone
-- img_url
-- (and other employee fields)
+## CSV Data Files
 
-**projects.csv**:
-- id (or ProjectID)
-- name
-- practice_area
-- sub_practice_area
-- region
-- status
-- service_type
-- openasset_url
-- (and other project fields)
+The application loads CSV files from OneDrive/SharePoint URLs configured via environment variables. The CSV files should contain:
 
-**project_employees.csv**:
-- ProjectID
-- EmployeeID
+- **employees.csv**: Employee information
+- **projects.csv**: Project information
+- **project_employees.csv**: Employee-project relationships
+
+See `ONEDRIVE_INTEGRATION.md` for details on setting up OneDrive URLs.
 
 ## Development
 
-### Running in Development Mode
-
-The Flask app runs in debug mode by default. To disable:
-- Set `app.run(debug=False)` in `app.py`
-
-### Frontend Development
-
-The React app is loaded via CDN with Babel Standalone for JSX transformation. For production, consider:
-- Using a build tool (Webpack, Vite, etc.)
-- Pre-compiling JSX
-- Minifying JavaScript
+- `npm run dev` - Start development server
+- `npm run build` - Build for production
+- `npm run start` - Start production server
+- `npm run lint` - Run ESLint
 
 ## Security Notes
 
-- ⚠️ **Never commit** `.env` files or Azure AD credentials to version control
-- ⚠️ **Never commit** CSV data files containing sensitive employee information
-- ✅ Use environment variables for all sensitive configuration
-- ✅ Ensure Azure AD is properly configured in production
+⚠️ **Never commit sensitive data:**
+- Never commit CSV files containing employee information
+- Never commit `.env.local` or environment variables
+- Use environment variables for all sensitive configuration
 
 ## License
 
