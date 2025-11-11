@@ -41,17 +41,52 @@ employees_data = []
 projects_data = []
 project_employees_data = []
 
+def download_from_onedrive(url, filename):
+    """Download a file from OneDrive URL"""
+    try:
+        import requests
+        print(f"Downloading {filename} from OneDrive...")
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        
+        # Save to temporary location
+        temp_dir = Path('/tmp') if Path('/tmp').exists() else CSV_DATA_DIR
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_file = temp_dir / filename
+        
+        with open(temp_file, 'wb') as f:
+            f.write(response.content)
+        
+        print(f"Downloaded {filename} to {temp_file}")
+        return temp_file
+    except Exception as e:
+        print(f"Error downloading {filename} from OneDrive: {e}")
+        return None
+
 def load_csv_data():
     """Load all CSV data into memory"""
     global employees_data, projects_data, project_employees_data
     
-    print(f"Loading CSV data from: {CSV_DATA_DIR.absolute()}")
+    # Determine CSV source (OneDrive or local)
+    use_onedrive = bool(ONEDRIVE_EMPLOYEES_URL or ONEDRIVE_PROJECTS_URL or ONEDRIVE_PROJECT_EMPLOYEES_URL)
+    
+    if use_onedrive:
+        print("Loading CSV data from OneDrive...")
+        # Download from OneDrive if URLs are provided
+        employees_file = download_from_onedrive(ONEDRIVE_EMPLOYEES_URL, 'employees.csv') if ONEDRIVE_EMPLOYEES_URL else EMPLOYEES_CSV
+        projects_file = download_from_onedrive(ONEDRIVE_PROJECTS_URL, 'projects.csv') if ONEDRIVE_PROJECTS_URL else PROJECTS_CSV
+        project_employees_file = download_from_onedrive(ONEDRIVE_PROJECT_EMPLOYEES_URL, 'project_employees.csv') if ONEDRIVE_PROJECT_EMPLOYEES_URL else PROJECT_EMPLOYEES_CSV
+    else:
+        print(f"Loading CSV data from local files: {CSV_DATA_DIR.absolute()}")
+        employees_file = EMPLOYEES_CSV
+        projects_file = PROJECTS_CSV
+        project_employees_file = PROJECT_EMPLOYEES_CSV
     
     # Load employees
     try:
-        if EMPLOYEES_CSV.exists():
-            print(f"Reading employees from: {EMPLOYEES_CSV.absolute()}")
-            with open(EMPLOYEES_CSV, 'r', encoding='utf-8') as f:
+        if employees_file and (isinstance(employees_file, Path) and employees_file.exists() or isinstance(employees_file, str)):
+            print(f"Reading employees from: {employees_file}")
+            with open(employees_file, 'r', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
                 employees_data = list(reader)
                 print(f"Read {len(employees_data)} rows from employees.csv")
@@ -72,7 +107,7 @@ def load_csv_data():
                         emp['EmployeeID'] = 0
             print(f"Loaded {len(employees_data)} employees from CSV")
         else:
-            print(f"ERROR: {EMPLOYEES_CSV.absolute()} not found!")
+            print(f"ERROR: Employees CSV not found!")
             employees_data = []
     except Exception as e:
         print(f"ERROR loading employees CSV: {e}")
