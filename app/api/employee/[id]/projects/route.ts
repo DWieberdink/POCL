@@ -7,7 +7,11 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    await ensureDataLoaded();
+    // Get access token from Authorization header
+    const authHeader = request.headers.get('authorization');
+    const accessToken = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : undefined;
+    
+    await ensureDataLoaded(accessToken);
     const employeeId = parseInt(params.id);
     
     if (isNaN(employeeId)) {

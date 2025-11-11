@@ -1,10 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useMsal, useIsAuthenticated, useAccount } from '@azure/msal-react';
+import { loginRequest } from '@/lib/msalConfig';
 import { MultiSelect } from '@/components/MultiSelect';
 import { FilterSection } from '@/components/FilterSection';
 import { EmployeeCard } from '@/components/EmployeeCard';
 import { EmployeeModal } from '@/components/EmployeeModal';
+import { AuthButton } from '@/components/AuthButton';
 
 interface Employee {
     id: number;
@@ -203,6 +206,10 @@ const jobTitleOptions = [
 ];
 
 export default function EmployeeDirectory() {
+    const { instance } = useMsal();
+    const isAuthenticated = useIsAuthenticated();
+    const account = useAccount();
+    
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
     const [loading, setLoading] = useState(false);
@@ -285,6 +292,26 @@ export default function EmployeeDirectory() {
         setError('');
         
         try {
+            // Get access token if authenticated
+            let accessToken: string | undefined;
+            if (isAuthenticated && account) {
+                try {
+                    const response = await instance.acquireTokenSilent({
+                        ...loginRequest,
+                        account: account,
+                    });
+                    accessToken = response.accessToken;
+                } catch (error) {
+                    // If silent token acquisition fails, try popup
+                    try {
+                        const response = await instance.acquireTokenPopup(loginRequest);
+                        accessToken = response.accessToken;
+                    } catch (popupError) {
+                        console.error('Failed to acquire token:', popupError);
+                    }
+                }
+            }
+            
             const params = new URLSearchParams();
             if (practiceArea.length > 0) params.append('practice_area', practiceArea.join(','));
             if (subPracticeArea.length > 0) params.append('sub_practice_area', subPracticeArea.join(','));
@@ -296,7 +323,14 @@ export default function EmployeeDirectory() {
             if (jobTitle.length > 0) params.append('job_title', jobTitle.join(','));
             if (nameSearch.trim()) params.append('name_search', nameSearch.trim());
             
-            const response = await fetch(`/api/employees?${params.toString()}`);
+            const headers: HeadersInit = {};
+            if (accessToken) {
+                headers['Authorization'] = `Bearer ${accessToken}`;
+            }
+            
+            const response = await fetch(`/api/employees?${params.toString()}`, {
+                headers,
+            });
             const data = await response.json();
             
             if (!response.ok) {
@@ -328,6 +362,26 @@ export default function EmployeeDirectory() {
 
     const exportToExcel = async () => {
         try {
+            // Get access token if authenticated
+            let accessToken: string | undefined;
+            if (isAuthenticated && account) {
+                try {
+                    const response = await instance.acquireTokenSilent({
+                        ...loginRequest,
+                        account: account,
+                    });
+                    accessToken = response.accessToken;
+                } catch (error) {
+                    // If silent token acquisition fails, try popup
+                    try {
+                        const response = await instance.acquireTokenPopup(loginRequest);
+                        accessToken = response.accessToken;
+                    } catch (popupError) {
+                        console.error('Failed to acquire token:', popupError);
+                    }
+                }
+            }
+            
             const params = new URLSearchParams();
             if (practiceArea.length > 0) params.append('practice_area', practiceArea.join(','));
             if (subPracticeArea.length > 0) params.append('sub_practice_area', subPracticeArea.join(','));
@@ -339,7 +393,14 @@ export default function EmployeeDirectory() {
             if (jobTitle.length > 0) params.append('job_title', jobTitle.join(','));
             if (nameSearch.trim()) params.append('name_search', nameSearch.trim());
             
-            const response = await fetch(`/api/export/employees?${params.toString()}`);
+            const headers: HeadersInit = {};
+            if (accessToken) {
+                headers['Authorization'] = `Bearer ${accessToken}`;
+            }
+            
+            const response = await fetch(`/api/export/employees?${params.toString()}`, {
+                headers,
+            });
             
             if (!response.ok) {
                 throw new Error('Failed to export employees');
@@ -383,13 +444,8 @@ export default function EmployeeDirectory() {
                             <h1>Employee Directory</h1>
                             <p className="tagline">Human by Design</p>
                         </div>
-                        <div className="header-auth">
-                            {user && (
-                                <>
-                                    <span className="user-name">{user.name || user.email}</span>
-                                    <a href="/logout" className="btn btn-outline">Logout</a>
-                                </>
-                            )}
+                        <div style={{ marginLeft: 'auto' }}>
+                            <AuthButton />
                         </div>
                     </div>
                 </div>

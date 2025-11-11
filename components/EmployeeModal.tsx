@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useMsal, useIsAuthenticated, useAccount } from '@azure/msal-react';
+import { loginRequest } from '@/lib/msalConfig';
 
 interface Employee {
     id: number;
@@ -33,6 +35,10 @@ interface EmployeeModalProps {
 }
 
 export function EmployeeModal({ employee, isOpen, onClose }: EmployeeModalProps) {
+    const { instance } = useMsal();
+    const isAuthenticated = useIsAuthenticated();
+    const account = useAccount();
+    
     const [projects, setProjects] = useState<Project[]>([]);
     const [loadingProjects, setLoadingProjects] = useState(false);
     const [summary, setSummary] = useState('');
@@ -73,7 +79,34 @@ export function EmployeeModal({ employee, isOpen, onClose }: EmployeeModalProps)
         if (!employee) return;
         setLoadingProjects(true);
         try {
-            const response = await fetch(`/api/employee/${employee.id}/projects`);
+            // Get access token if authenticated
+            let accessToken: string | undefined;
+            if (isAuthenticated && account) {
+                try {
+                    const response = await instance.acquireTokenSilent({
+                        ...loginRequest,
+                        account: account,
+                    });
+                    accessToken = response.accessToken;
+                } catch (error) {
+                    // If silent token acquisition fails, try popup
+                    try {
+                        const response = await instance.acquireTokenPopup(loginRequest);
+                        accessToken = response.accessToken;
+                    } catch (popupError) {
+                        console.error('Failed to acquire token:', popupError);
+                    }
+                }
+            }
+            
+            const headers: HeadersInit = {};
+            if (accessToken) {
+                headers['Authorization'] = `Bearer ${accessToken}`;
+            }
+            
+            const response = await fetch(`/api/employee/${employee.id}/projects`, {
+                headers,
+            });
             const data = await response.json();
             if (response.ok) {
                 setProjects(data.projects || []);

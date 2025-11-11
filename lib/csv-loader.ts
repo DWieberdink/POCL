@@ -44,7 +44,7 @@ let projectsData: Project[] = [];
 let projectEmployeesData: ProjectEmployee[] = [];
 let dataLoadPromise: Promise<void> | null = null;
 
-async function downloadFromOneDrive(url: string): Promise<string> {
+async function downloadFromOneDrive(url: string, accessToken?: string): Promise<string> {
   // Convert SharePoint link to direct download format
   // SharePoint URLs format: .../Documents/.../file.csv?d=...&csf=1&web=1&e=...
   // Need to convert to: .../Documents/.../file.csv?download=1
@@ -65,12 +65,19 @@ async function downloadFromOneDrive(url: string): Promise<string> {
     downloadUrl = `${url}${separator}download=1`;
   }
 
+  const headers: HeadersInit = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/csv,text/plain,*/*',
+    'Accept-Language': 'en-US,en;q=0.9'
+  };
+
+  // Add authorization header if access token is provided
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
+
   const response = await fetch(downloadUrl, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept': 'text/csv,text/plain,*/*',
-      'Accept-Language': 'en-US,en;q=0.9'
-    },
+    headers,
     cache: 'no-store', // Don't cache CSV files
     redirect: 'follow'
   });
@@ -94,7 +101,7 @@ async function downloadFromOneDrive(url: string): Promise<string> {
   return content;
 }
 
-async function loadCSVData() {
+async function loadCSVData(accessToken?: string) {
   const onedriveEmployeesUrl = process.env.ONEDRIVE_EMPLOYEES_URL || '';
   const onedriveProjectsUrl = process.env.ONEDRIVE_PROJECTS_URL || '';
   const onedriveProjectEmployeesUrl = process.env.ONEDRIVE_PROJECT_EMPLOYEES_URL || '';
@@ -107,10 +114,10 @@ async function loadCSVData() {
     let projectEmployeesContent: string;
 
     if (useOneDrive) {
-      // Load from OneDrive
-      employeesContent = await downloadFromOneDrive(onedriveEmployeesUrl);
-      projectsContent = await downloadFromOneDrive(onedriveProjectsUrl);
-      projectEmployeesContent = await downloadFromOneDrive(onedriveProjectEmployeesUrl);
+      // Load from OneDrive with access token if provided
+      employeesContent = await downloadFromOneDrive(onedriveEmployeesUrl, accessToken);
+      projectsContent = await downloadFromOneDrive(onedriveProjectsUrl, accessToken);
+      projectEmployeesContent = await downloadFromOneDrive(onedriveProjectEmployeesUrl, accessToken);
     } else {
       // Load from local files (for local development)
       const dataDir = join(process.cwd(), 'Data');
@@ -169,7 +176,7 @@ async function loadCSVData() {
   }
 }
 
-export function ensureDataLoaded(): Promise<void> {
+export function ensureDataLoaded(accessToken?: string): Promise<void> {
   // If data is already loaded, return immediately
   if (employeesData.length > 0 && projectsData.length > 0) {
     return Promise.resolve();
@@ -181,7 +188,7 @@ export function ensureDataLoaded(): Promise<void> {
   }
 
   // Start loading
-  dataLoadPromise = loadCSVData();
+  dataLoadPromise = loadCSVData(accessToken);
   return dataLoadPromise;
 }
 

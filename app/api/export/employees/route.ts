@@ -41,7 +41,11 @@ function matchesRangeFilter(value: number | undefined, rangeFilters: string[]): 
 
 export async function GET(request: NextRequest) {
   try {
-    await ensureDataLoaded();
+    // Get access token from Authorization header
+    const authHeader = request.headers.get('authorization');
+    const accessToken = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : undefined;
+    
+    await ensureDataLoaded(accessToken);
     
     const searchParams = request.nextUrl.searchParams;
     const practiceArea = parseFilterList(searchParams.get('practice_area'));
