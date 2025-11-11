@@ -45,6 +45,73 @@ let projectEmployeesData: ProjectEmployee[] = [];
 let dataLoadPromise: Promise<void> | null = null;
 
 async function downloadFromOneDrive(url: string, accessToken?: string): Promise<string> {
+  // If we have an access token, use Microsoft Graph API
+  if (accessToken) {
+    return downloadFromSharePointViaGraph(url, accessToken);
+  }
+  
+  // Otherwise, try direct download (for public files or local development)
+  return downloadFromSharePointDirect(url);
+}
+
+async function downloadFromSharePointViaGraph(url: string, accessToken: string): Promise<string> {
+  // Convert SharePoint URL to Graph API format
+  // SharePoint URL format: https://{tenant}-my.sharepoint.com/:x:/r/personal/{user}/{path}/file.csv?d=...&web=1&e=...
+  // Graph API format: https://graph.microsoft.com/v1.0/sites/{hostname}:/{server-relative-path}:/content
+  
+  try {
+    // Extract the base URL and path from SharePoint URL
+    const urlObj = new URL(url.split('?')[0]); // Remove query parameters
+    const hostname = urlObj.hostname; // e.g., perkinseastman-my.sharepoint.com
+    
+    // Extract the path - SharePoint URLs have format: /:x:/r/personal/.../file.csv
+    let serverRelativePath = urlObj.pathname;
+    
+    // Remove the /:x:/r part and get the actual path
+    // Format: /:x:/r/personal/{user}/Documents/Temp/api_test/Data/file.csv
+    const pathMatch = serverRelativePath.match(/\/:x:\/r\/(.+)$/);
+    if (pathMatch) {
+      serverRelativePath = '/' + pathMatch[1];
+    }
+    
+    // Encode the path for Graph API
+    const encodedPath = encodeURIComponent(serverRelativePath);
+    
+    // Construct Graph API URL
+    // For OneDrive personal: /me/drive/root:/{path}:/content
+    // For SharePoint site: /sites/{hostname}:/{path}:/content
+    let graphUrl: string;
+    
+    if (hostname.includes('-my.sharepoint.com')) {
+      // Personal OneDrive
+      graphUrl = `https://graph.microsoft.com/v1.0/me/drive/root:${serverRelativePath}:/content`;
+    } else {
+      // SharePoint site
+      graphUrl = `https://graph.microsoft.com/v1.0/sites/${hostname}:${serverRelativePath}:/content`;
+    }
+    
+    const response = await fetch(graphUrl, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'text/csv,text/plain,*/*',
+      },
+      cache: 'no-store',
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Graph API error:', errorText);
+      throw new Error(`Failed to download via Graph API: ${response.status} ${response.statusText}. ${errorText.substring(0, 200)}`);
+    }
+    
+    return await response.text();
+  } catch (error: any) {
+    console.error('Error downloading via Graph API:', error);
+    throw new Error(`Graph API download failed: ${error.message}`);
+  }
+}
+
+async function downloadFromSharePointDirect(url: string): Promise<string> {
   // Convert SharePoint link to direct download format
   // SharePoint URLs format: .../Documents/.../file.csv?d=...&csf=1&web=1&e=...
   // Need to convert to: .../Documents/.../file.csv?download=1
@@ -70,11 +137,6 @@ async function downloadFromOneDrive(url: string, accessToken?: string): Promise<
     'Accept': 'text/csv,text/plain,*/*',
     'Accept-Language': 'en-US,en;q=0.9'
   };
-
-  // Add authorization header if access token is provided
-  if (accessToken) {
-    headers['Authorization'] = `Bearer ${accessToken}`;
-  }
 
   const response = await fetch(downloadUrl, {
     headers,
