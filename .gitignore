@@ -44,8 +44,12 @@ instance/
 Thumbs.db
 
 # Data files (CSV files contain sensitive employee data - DO NOT COMMIT)
-Data/*.csv
-Data/*.CSV
+# Uncomment below if deploying to Vercel (requires CSV files in repo)
+# Data/*.csv
+# Data/*.CSV
+
+# For Vercel deployment, you may need to commit CSV files
+# For Azure App Service, keep them excluded
 
 # Logs
 *.log
