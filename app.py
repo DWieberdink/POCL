@@ -49,11 +49,29 @@ projects_data = []
 project_employees_data = []
 
 def download_from_onedrive(url, filename):
-    """Download a file from OneDrive URL"""
+    """Download a file from OneDrive/SharePoint URL"""
     try:
         import requests
         print(f"Downloading {filename} from OneDrive...")
-        response = requests.get(url, timeout=30)
+        
+        # Convert SharePoint link to direct download if needed
+        download_url = url
+        if 'web=1' in url:
+            download_url = url.replace('web=1', 'download=1')
+        elif 'download=1' not in url and 'web=1' not in url:
+            # If neither parameter exists, add download=1
+            separator = '&' if '?' in url else '?'
+            download_url = f"{url}{separator}download=1"
+        
+        print(f"Download URL: {download_url}")
+        
+        # Create session with headers to handle SharePoint authentication
+        session = requests.Session()
+        session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        
+        response = session.get(download_url, timeout=60, allow_redirects=True)
         response.raise_for_status()
         
         # Save to temporary location
@@ -64,10 +82,12 @@ def download_from_onedrive(url, filename):
         with open(temp_file, 'wb') as f:
             f.write(response.content)
         
-        print(f"Downloaded {filename} to {temp_file}")
+        print(f"Downloaded {filename} to {temp_file} ({len(response.content)} bytes)")
         return temp_file
     except Exception as e:
         print(f"Error downloading {filename} from OneDrive: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def load_csv_data():
