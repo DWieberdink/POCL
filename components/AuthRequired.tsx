@@ -30,21 +30,8 @@ export function AuthRequired({ onRetry }: AuthRequiredProps) {
   };
   
   const handleSignIn = () => {
-    // Open SharePoint login page in new tab so user can return to this tab
-    // After signing in SharePoint, cookies will be available for this app
-    const signInWindow = window.open(getSignInUrl(), '_blank');
-    
-    // Show message that they can return to this tab after signing in
-    if (signInWindow) {
-      // Focus back on this window after a moment
-      setTimeout(() => {
-        window.focus();
-      }, 500);
-    }
-  };
-  
-  const handleSignInSameWindow = () => {
-    // Alternative: Open in same window (user will need to use back button)
+    // Open SharePoint login page in same window
+    // After login, user can use browser back button or navigate to app URL
     window.location.href = getSignInUrl();
   };
 
@@ -65,31 +52,25 @@ export function AuthRequired({ onRetry }: AuthRequiredProps) {
           <button className="btn btn-primary" onClick={handleSignIn}>
             <i className="fab fa-microsoft"></i>
             Sign in with Microsoft
-            <small style={{ display: 'block', fontSize: '0.75rem', marginTop: '0.25rem', opacity: 0.9 }}>
-              (Opens in new tab - you can return here after signing in)
-            </small>
           </button>
           {onRetry && (
             <button className="btn btn-outline" onClick={onRetry}>
               <i className="fas fa-redo"></i>
-              I've Signed In - Retry Now
+              Retry
             </button>
           )}
         </div>
         <div className="auth-help">
           <p>
-            <strong>Quick Instructions:</strong>
+            <strong>Instructions:</strong>
           </p>
           <ol>
-            <li>Click "Sign in with Microsoft" above (opens SharePoint in a new tab)</li>
-            <li>Sign in with your Perkins Eastman Microsoft 365 account in that tab</li>
-            <li><strong>Return to this tab</strong> (keep it open!) and click "I've Signed In - Retry Now"</li>
-            <li>The app will now have access to the data</li>
+            <li>Click "Sign in with Microsoft" above</li>
+            <li>Sign in with your Perkins Eastman Microsoft 365 account</li>
+            <li>After signing in, navigate back to: <strong>{appUrl}</strong></li>
+            <li>The app will automatically detect your authentication</li>
           </ol>
-          <p style={{ marginTop: '1rem', fontSize: '0.9rem', color: 'var(--pe-gray-medium)', fontStyle: 'italic' }}>
-            💡 <strong>Tip:</strong> Keep this tab open while you sign in. After signing into SharePoint, your browser cookies will be available to this app automatically.
-          </p>
-          <p style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: 'var(--pe-gray-medium)' }}>
+          <p style={{ marginTop: '1rem', fontSize: '0.9rem', color: 'var(--pe-gray-medium)' }}>
             App URL: <code style={{ background: 'var(--gray-100)', padding: '2px 6px', borderRadius: '3px' }}>{appUrl}</code>
           </p>
         </div>

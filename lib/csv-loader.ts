@@ -136,8 +136,11 @@ async function loadCSVData(cookieHeader?: string) {
   const onedriveEmployeesUrl = process.env.ONEDRIVE_EMPLOYEES_URL || '';
   const onedriveProjectsUrl = process.env.ONEDRIVE_PROJECTS_URL || '';
   const onedriveProjectEmployeesUrl = process.env.ONEDRIVE_PROJECT_EMPLOYEES_URL || '';
-
-  const useOneDrive = !!(onedriveEmployeesUrl || onedriveProjectsUrl || onedriveProjectEmployeesUrl);
+  
+  // Allow forcing local files even if OneDrive URLs are set (for local testing)
+  const forceLocalFiles = process.env.FORCE_LOCAL_CSV === 'true';
+  
+  const useOneDrive = !!(onedriveEmployeesUrl || onedriveProjectsUrl || onedriveProjectEmployeesUrl) && !forceLocalFiles;
 
   try {
     let employeesContent: string;
@@ -148,9 +151,33 @@ async function loadCSVData(cookieHeader?: string) {
       // Load from OneDrive/SharePoint - relies on browser cookies for authentication
       // CSV files should be shared as "People in <YourOrg> with the link" NOT "Anyone with the link"
       // Cookies are forwarded from the browser request to authenticate with SharePoint
-      employeesContent = await downloadFromSharePointDirect(onedriveEmployeesUrl, cookieHeader);
-      projectsContent = await downloadFromSharePointDirect(onedriveProjectsUrl, cookieHeader);
-      projectEmployeesContent = await downloadFromSharePointDirect(onedriveProjectEmployeesUrl, cookieHeader);
+      try {
+        employeesContent = await downloadFromSharePointDirect(onedriveEmployeesUrl, cookieHeader);
+        projectsContent = await downloadFromSharePointDirect(onedriveProjectsUrl, cookieHeader);
+        projectEmployeesContent = await downloadFromSharePointDirect(onedriveProjectEmployeesUrl, cookieHeader);
+      } catch (error: any) {
+        // If authentication fails and we're in development, fall back to local files
+        if (process.env.NODE_ENV === 'development' && error instanceof SharePointAuthError) {
+          console.log('[CSV Loader] Authentication failed, falling back to local CSV files for development');
+          const dataDir = join(process.cwd(), 'Data');
+          const employeesPath = join(dataDir, 'employees.csv');
+          const projectsPath = join(dataDir, 'projects.csv');
+          const projectEmployeesPath = join(dataDir, 'project_employees.csv');
+          
+          employeesContent = readFileSync(employeesPath, 'utf-8');
+          projectsContent = readFileSync(projectsPath, 'utf-8');
+          projectEmployeesContent = readFileSync(projectEmployeesPath, 'utf-8');
+          
+          lastLoadTime = {
+            employees: statSync(employeesPath).mtimeMs,
+            projects: statSync(projectsPath).mtimeMs,
+            projectEmployees: statSync(projectEmployeesPath).mtimeMs
+          };
+        } else {
+          // Re-throw error in production or for non-auth errors
+          throw error;
+        }
+      }
     } else {
       // Load from local files (for local development)
       const dataDir = join(process.cwd(), 'Data');
