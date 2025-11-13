@@ -24,9 +24,53 @@ export async function GET(request: NextRequest) {
       break;
   }
 
+  // Check if we should use local files
+  const forceLocalCsv = process.env.FORCE_LOCAL_CSV === 'true';
+  
+  if (forceLocalCsv) {
+    console.log('[Proxy CSV] FORCE_LOCAL_CSV=true, using local CSV files');
+    try {
+      const { readFileSync } = await import('fs');
+      const { join } = await import('path');
+      
+      const dataDir = join(process.cwd(), 'Data');
+      let filePath: string;
+      
+      switch (fileType) {
+        case 'employees':
+          filePath = join(dataDir, 'employees.csv');
+          break;
+        case 'projects':
+          filePath = join(dataDir, 'projects.csv');
+          break;
+        case 'project_employees':
+          filePath = join(dataDir, 'project_employees.csv');
+          break;
+        default:
+          return NextResponse.json({ error: 'Invalid file type' }, { status: 400 });
+      }
+      
+      const content = readFileSync(filePath, 'utf-8');
+      console.log('[Proxy CSV] Loaded local file:', filePath, 'length:', content.length);
+      
+      return new NextResponse(content, {
+        headers: {
+          'Content-Type': 'text/csv',
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
+    } catch (error: any) {
+      console.error('[Proxy CSV] Error reading local file:', error);
+      return NextResponse.json({ 
+        error: `Failed to read local CSV file: ${error.message}` 
+      }, { status: 500 });
+    }
+  }
+  
   if (!csvUrl) {
     return NextResponse.json({ 
-      error: `CSV URL not configured for ${fileType}` 
+      error: `CSV URL not configured for ${fileType}. Set ONEDRIVE_*_URL environment variables or FORCE_LOCAL_CSV=true` 
     }, { status: 500 });
   }
 

@@ -224,6 +224,71 @@ export async function loadAllCSVData(): Promise<{
   projects: Project[];
   projectEmployees: ProjectEmployee[];
 }> {
+  // Check if we should use local files (via API endpoint)
+  const forceLocalCsv = process.env.NEXT_PUBLIC_FORCE_LOCAL_CSV === 'true';
+  
+  if (forceLocalCsv) {
+    console.log('[Client CSV Loader] FORCE_LOCAL_CSV=true, loading via API endpoint (uses local files)');
+    // Use the API endpoint which will use local CSV files
+    try {
+      const [employeesRes, projectsRes, projectEmployeesRes] = await Promise.all([
+        fetch('/api/proxy-csv?type=employees'),
+        fetch('/api/proxy-csv?type=projects'),
+        fetch('/api/proxy-csv?type=project_employees'),
+      ]);
+      
+      if (!employeesRes.ok || !projectsRes.ok || !projectEmployeesRes.ok) {
+        throw new Error('Failed to load CSV files from API');
+      }
+      
+      const employeesContent = await employeesRes.text();
+      const projectsContent = await projectsRes.text();
+      const projectEmployeesContent = await projectEmployeesRes.text();
+      
+      // Parse CSV files
+      const employees = parseCSV<Employee>(employeesContent);
+      const projects = parseCSV<Project>(projectsContent);
+      const projectEmployees = parseCSV<ProjectEmployee>(projectEmployeesContent);
+      
+      // Process employees: ensure EmployeeID and id are set
+      const processedEmployees = employees.map((emp: any) => {
+        const employeeId = emp.EmployeeID || emp.id || emp.EmployeeID;
+        return {
+          ...emp,
+          id: emp.id || employeeId,
+          EmployeeID: employeeId,
+        };
+      });
+
+      // Process projects: ensure id is set
+      const processedProjects = projects.map((proj: any) => ({
+        ...proj,
+        id: proj.id || parseInt(proj.id) || 0,
+      }));
+
+      // Process project-employee relationships: ensure IDs are numbers
+      const processedProjectEmployees = projectEmployees.map((rel: any) => ({
+        ProjectID: parseInt(rel.ProjectID) || 0,
+        EmployeeID: parseInt(rel.EmployeeID) || 0,
+      }));
+
+      console.log('[Client CSV Loader] Loaded from local files:', {
+        employees: processedEmployees.length,
+        projects: processedProjects.length,
+        projectEmployees: processedProjectEmployees.length,
+      });
+
+      return {
+        employees: processedEmployees,
+        projects: processedProjects,
+        projectEmployees: processedProjectEmployees,
+      };
+    } catch (error: any) {
+      console.error('[Client CSV Loader] Error loading local CSV files:', error);
+      throw new Error(`Failed to load local CSV files: ${error.message || 'Unknown error'}`);
+    }
+  }
+  
   // Get URLs from environment variables (these should be set in Vercel)
   // For client-side, we'll need to expose them via NEXT_PUBLIC_ prefix
   const employeesUrl = process.env.NEXT_PUBLIC_ONEDRIVE_EMPLOYEES_URL;
@@ -235,6 +300,7 @@ export async function loadAllCSVData(): Promise<{
     hasProjectsUrl: !!projectsUrl,
     hasProjectEmployeesUrl: !!projectEmployeesUrl,
     employeesUrlLength: employeesUrl?.length || 0,
+    forceLocalCsv: forceLocalCsv,
   });
 
   if (!employeesUrl || !projectsUrl || !projectEmployeesUrl) {
@@ -245,7 +311,8 @@ export async function loadAllCSVData(): Promise<{
     
     throw new Error(
       `OneDrive URLs are not configured. Missing: ${missing.join(', ')}. ` +
-      `Please set these environment variables in Vercel with the NEXT_PUBLIC_ prefix.`
+      `Please set these environment variables in Vercel with the NEXT_PUBLIC_ prefix, ` +
+      `or set NEXT_PUBLIC_FORCE_LOCAL_CSV=true to use local CSV files.`
     );
   }
 
