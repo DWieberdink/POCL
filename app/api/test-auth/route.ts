@@ -69,10 +69,25 @@ export async function GET(request: NextRequest) {
     };
   }
   
+  // Check environment configuration
+  const envCheck = {
+    hasOneDriveUrls: !!(process.env.ONEDRIVE_EMPLOYEES_URL || process.env.ONEDRIVE_PROJECTS_URL),
+    forceLocalCsv: process.env.FORCE_LOCAL_CSV === 'true',
+    nodeEnv: process.env.NODE_ENV,
+    vercelUrl: process.env.VERCEL_URL,
+    vercelEnv: process.env.VERCEL_ENV
+  };
+  
   return NextResponse.json({
     message: 'Authentication test endpoint',
     browserInfo: info,
     sharePointTest: sharePointTest || 'No ONEDRIVE_EMPLOYEES_URL set or no cookies',
+    environment: envCheck,
+    recommendations: {
+      ifStuck: 'If stuck on auth page: 1) Click "I\'m Already Signed In - Retry Now" 2) Or click "Return to App" 3) Or manually refresh the page',
+      if401Errors: 'If getting 401 errors: Check that OneDrive URLs are set correctly in Vercel environment variables',
+      ifNoData: 'If no data loads: Verify CSV files are shared as "People in org" not "Anyone"'
+    },
     instructions: {
       local: 'For local testing, ensure you are signed into SharePoint in your browser',
       vercel: 'For Vercel, cookies will be forwarded from browser requests'

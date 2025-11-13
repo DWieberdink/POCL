@@ -43,9 +43,10 @@ export function AuthRequired({ onRetry }: AuthRequiredProps) {
       return;
     }
     
-    // Store the app URL in sessionStorage so we can return to it
+    // Store the app URL and return flag in sessionStorage
     if (typeof window !== 'undefined') {
       sessionStorage.setItem('returnToApp', appUrl);
+      sessionStorage.setItem('returnFromAuth', 'true');
     }
     
     // Open SharePoint login page in same window
@@ -61,25 +62,53 @@ export function AuthRequired({ onRetry }: AuthRequiredProps) {
   const checkIfAlreadySignedIn = async () => {
     setCheckingAuth(true);
     try {
-      const response = await fetch('/api/practice-areas');
-      if (response.ok) {
-        // Already authenticated! Just retry
-        if (onRetry) {
-          onRetry();
-        } else {
-          window.location.reload();
-        }
-      } else {
+      // Try multiple endpoints to check authentication
+      const [practiceRes, employeesRes] = await Promise.all([
+        fetch('/api/practice-areas'),
+        fetch('/api/employees?limit=1')
+      ]);
+      
+      // If either endpoint works, we're authenticated
+      if (practiceRes.ok || employeesRes.ok) {
+        console.log('[Auth] Already authenticated! Reloading...');
+        // Already authenticated! Just reload
+        window.location.reload();
+        return;
+      }
+      
+      // Check if it's an auth error
+      if (practiceRes.status === 401 || employeesRes.status === 401) {
+        console.log('[Auth] Not authenticated, redirecting to SharePoint...');
         // Not authenticated, proceed with sign-in
+        handleSignIn();
+      } else {
+        // Other error - might be a different issue
+        console.log('[Auth] Unexpected error:', practiceRes.status, employeesRes.status);
         handleSignIn();
       }
     } catch (error) {
+      console.error('[Auth] Error checking authentication:', error);
       // Error checking - proceed with sign-in
       handleSignIn();
     } finally {
       setCheckingAuth(false);
     }
   };
+  
+  // Auto-check on mount if we're coming back from SharePoint
+  useEffect(() => {
+    // Check if we have a return flag in URL or sessionStorage
+    const urlParams = new URLSearchParams(window.location.search);
+    const returnFromAuth = urlParams.get('auth') === 'success' || sessionStorage.getItem('returnFromAuth');
+    
+    if (returnFromAuth) {
+      sessionStorage.removeItem('returnFromAuth');
+      // Small delay then check authentication
+      setTimeout(() => {
+        checkIfAlreadySignedIn();
+      }, 500);
+    }
+  }, []);
 
   return (
     <div className="auth-required-container">
@@ -104,9 +133,31 @@ export function AuthRequired({ onRetry }: AuthRequiredProps) {
             {checkingAuth ? 'Checking...' : 'Sign in with Microsoft'}
           </button>
           {onRetry && (
-            <button className="btn btn-outline" onClick={onRetry}>
+            <button 
+              className="btn btn-outline" 
+              onClick={async () => {
+                // First check if we're actually authenticated
+                setCheckingAuth(true);
+                try {
+                  const response = await fetch('/api/practice-areas');
+                  if (response.ok) {
+                    // We're authenticated! Reload
+                    window.location.reload();
+                  } else {
+                    // Not authenticated, call the retry handler
+                    onRetry();
+                  }
+                } catch (error) {
+                  // Try anyway
+                  onRetry();
+                } finally {
+                  setCheckingAuth(false);
+                }
+              }}
+              disabled={checkingAuth}
+            >
               <i className="fas fa-redo"></i>
-              I'm Already Signed In - Retry Now
+              {checkingAuth ? 'Checking...' : 'I\'m Already Signed In - Retry Now'}
             </button>
           )}
           <button className="btn btn-outline" onClick={handleReturnToApp} style={{ marginTop: '0.5rem' }}>
@@ -126,8 +177,18 @@ export function AuthRequired({ onRetry }: AuthRequiredProps) {
             <li>The app will automatically detect your authentication</li>
           </ol>
           <div style={{ marginTop: '1rem', padding: '0.75rem', background: '#fff3cd', borderRadius: '6px', border: '1px solid #ffc107' }}>
-            <p style={{ margin: 0, fontSize: '0.9rem', color: '#856404' }}>
-              <strong>💡 Already signed in?</strong> If you're already signed into SharePoint, just click "I'm Already Signed In - Retry" or "Return to App" above.
+            <p style={{ margin: 0, fontSize: '0.9rem', color: '#856404', marginBottom: '0.5rem' }}>
+              <strong>💡 Already signed in?</strong> If you're already signed into SharePoint:
+            </p>
+            <ol style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.9rem', color: '#856404' }}>
+              <li>Click "I'm Already Signed In - Retry Now" above</li>
+              <li>Or click "Return to App" and refresh the page</li>
+              <li>Or manually refresh this page (F5)</li>
+            </ol>
+          </div>
+          <div style={{ marginTop: '1rem', padding: '0.75rem', background: '#d1ecf1', borderRadius: '6px', border: '1px solid #bee5eb' }}>
+            <p style={{ margin: 0, fontSize: '0.85rem', color: '#0c5460' }}>
+              <strong>🔍 Debugging:</strong> Visit <code style={{ background: 'white', padding: '2px 4px' }}>/api/test-auth</code> to check authentication status and environment configuration.
             </p>
           </div>
           <p style={{ marginTop: '1rem', fontSize: '0.85rem', color: 'var(--pe-gray-medium)' }}>
