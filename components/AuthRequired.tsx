@@ -108,6 +108,18 @@ export function AuthRequired({ onRetry }: AuthRequiredProps) {
         checkIfAlreadySignedIn();
       }, 500);
     }
+    
+    // Also check on page load if user might be coming back from SharePoint
+    // Check after a short delay to allow cookies to be available
+    const checkOnLoad = setTimeout(() => {
+      // Only auto-check if we haven't already tried
+      if (!sessionStorage.getItem('authChecked')) {
+        sessionStorage.setItem('authChecked', 'true');
+        checkIfAlreadySignedIn();
+      }
+    }, 1000);
+    
+    return () => clearTimeout(checkOnLoad);
   }, []);
 
   return (
