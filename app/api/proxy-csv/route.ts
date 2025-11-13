@@ -34,6 +34,26 @@ export async function GET(request: NextRequest) {
     // Forward cookies from browser request
     const cookieHeader = request.headers.get('cookie') || undefined;
     
+    // Log cookie information for debugging
+    const cookieNames = cookieHeader ? cookieHeader.split(';').map(c => c.split('=')[0].trim()).filter(Boolean) : [];
+    const hasSharePointCookies = cookieHeader && (
+      cookieHeader.includes('FedAuth') || 
+      cookieHeader.includes('rtFa') ||
+      cookieHeader.includes('Microsoft') ||
+      cookieHeader.includes('SharePoint')
+    );
+    
+    console.log('[Proxy CSV] Cookie info:', {
+      hasCookies: !!cookieHeader,
+      cookieCount: cookieNames.length,
+      cookieNames: cookieNames,
+      hasSharePointCookies: !!hasSharePointCookies,
+    });
+    
+    if (!hasSharePointCookies && cookieHeader) {
+      console.warn('[Proxy CSV] WARNING: No SharePoint cookies found. SharePoint cookies are domain-specific and won\'t be sent to Vercel.');
+    }
+    
     // Convert SharePoint link to direct download format
     let downloadUrl = csvUrl;
     if (csvUrl.includes('web=1')) {
@@ -55,6 +75,9 @@ export async function GET(request: NextRequest) {
 
     if (cookieHeader) {
       headers['Cookie'] = cookieHeader;
+      console.log('[Proxy CSV] Forwarding cookies to SharePoint (length:', cookieHeader.length, 'chars)');
+    } else {
+      console.warn('[Proxy CSV] No cookies to forward - request will likely require authentication');
     }
 
     const response = await fetch(downloadUrl, {
@@ -66,9 +89,19 @@ export async function GET(request: NextRequest) {
     console.log('[Proxy CSV] Response status:', response.status);
 
     if (response.status === 401 || response.status === 403) {
+      console.log('[Proxy CSV] Authentication error:', response.status);
+      console.log('[Proxy CSV] This likely means SharePoint cookies are not available (domain-specific cookies)');
+      
       return NextResponse.json({ 
         error: 'Authentication required',
-        requiresAuth: true 
+        requiresAuth: true,
+        details: {
+          status: response.status,
+          hasCookies: !!cookieHeader,
+          hasSharePointCookies: !!hasSharePointCookies,
+          note: 'SharePoint cookies are domain-specific and cannot be forwarded from browser to Vercel server. ' +
+                'The CSV files must be accessible without authentication, or you need to use OAuth/MSAL for proper authentication.'
+        }
       }, { status: 401 });
     }
 
