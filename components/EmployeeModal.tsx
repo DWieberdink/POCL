@@ -1,8 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useMsal, useIsAuthenticated, useAccount } from '@azure/msal-react';
-import { loginRequest } from '@/lib/msalConfig';
 
 interface Employee {
     id: number;
@@ -35,10 +33,6 @@ interface EmployeeModalProps {
 }
 
 export function EmployeeModal({ employee, isOpen, onClose }: EmployeeModalProps) {
-    const { instance } = useMsal();
-    const isAuthenticated = useIsAuthenticated();
-    const account = useAccount();
-    
     const [projects, setProjects] = useState<Project[]>([]);
     const [loadingProjects, setLoadingProjects] = useState(false);
     const [summary, setSummary] = useState('');
@@ -79,37 +73,13 @@ export function EmployeeModal({ employee, isOpen, onClose }: EmployeeModalProps)
         if (!employee) return;
         setLoadingProjects(true);
         try {
-            // Get access token if authenticated
-            let accessToken: string | undefined;
-            if (isAuthenticated && account) {
-                try {
-                    const response = await instance.acquireTokenSilent({
-                        ...loginRequest,
-                        account: account,
-                    });
-                    accessToken = response.accessToken;
-                } catch (error) {
-                    // If silent token acquisition fails, try popup
-                    try {
-                        const response = await instance.acquireTokenPopup(loginRequest);
-                        accessToken = response.accessToken;
-                    } catch (popupError) {
-                        console.error('Failed to acquire token:', popupError);
-                    }
-                }
-            }
-            
-            const headers: HeadersInit = {};
-            if (accessToken) {
-                headers['Authorization'] = `Bearer ${accessToken}`;
-            }
-            
-            const response = await fetch(`/api/employee/${employee.id}/projects`, {
-                headers,
-            });
+            const response = await fetch(`/api/employee/${employee.id}/projects`);
             const data = await response.json();
+            
             if (response.ok) {
                 setProjects(data.projects || []);
+            } else {
+                console.error('Error loading projects:', data.error);
             }
         } catch (error) {
             console.error('Error loading projects:', error);
@@ -235,7 +205,12 @@ export function EmployeeModal({ employee, isOpen, onClose }: EmployeeModalProps)
                                         <div 
                                             key={project.id} 
                                             className="project-item"
-                                            onClick={() => project.openasset_url && window.open(project.openasset_url, '_blank')}
+                                            onClick={() => {
+                                                if (project.openasset_url) {
+                                                    window.open(project.openasset_url, '_blank', 'noopener,noreferrer');
+                                                }
+                                            }}
+                                            style={{ cursor: project.openasset_url ? 'pointer' : 'default' }}
                                         >
                                             <div className="project-name">
                                                 {project.name}
@@ -267,9 +242,11 @@ export function EmployeeModal({ employee, isOpen, onClose }: EmployeeModalProps)
                                                     </div>
                                                 )}
                                             </div>
-                                            <div className="project-click-hint">
-                                                <small>Click to open in OpenAsset</small>
-                                            </div>
+                                            {project.openasset_url && (
+                                                <div className="project-click-hint">
+                                                    <small>Click to open in OpenAsset</small>
+                                                </div>
+                                            )}
                                         </div>
                                     ))
                                 )}

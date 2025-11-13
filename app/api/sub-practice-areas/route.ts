@@ -1,10 +1,12 @@
 // app/api/sub-practice-areas/route.ts
-import { NextResponse } from 'next/server';
-import { ensureDataLoaded, getProjectsData } from '@/lib/csv-loader';
+import { NextRequest, NextResponse } from 'next/server';
+import { ensureDataLoaded, getProjectsData, SharePointAuthError } from '@/lib/csv-loader';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    await ensureDataLoaded();
+    // Forward cookies from browser request to SharePoint for authentication
+    const cookieHeader = request.headers.get('cookie') || undefined;
+    await ensureDataLoaded(cookieHeader);
     const projectsData = getProjectsData();
     
     const subPracticeAreas = new Set<string>();
@@ -19,6 +21,14 @@ export async function GET() {
       sub_practice_areas: Array.from(subPracticeAreas).sort()
     });
   } catch (error: any) {
+    // Handle authentication errors
+    if (error instanceof SharePointAuthError) {
+      return NextResponse.json({ 
+        error: error.message,
+        requiresAuth: true 
+      }, { status: 401 });
+    }
+    
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

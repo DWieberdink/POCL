@@ -1,6 +1,6 @@
 // lib/csv-loader.ts - CSV loading utilities for Next.js
 import { parse } from 'csv-parse/sync';
-import { readFileSync } from 'fs';
+import { readFileSync, statSync } from 'fs';
 import { join } from 'path';
 
 export interface Employee {
@@ -43,82 +43,17 @@ let employeesData: Employee[] = [];
 let projectsData: Project[] = [];
 let projectEmployeesData: ProjectEmployee[] = [];
 let dataLoadPromise: Promise<void> | null = null;
+let lastLoadTime: { employees: number; projects: number; projectEmployees: number } | null = null;
 
-async function downloadFromOneDrive(url: string, accessToken?: string): Promise<string> {
-  // If we have an access token, use Microsoft Graph API
-  if (accessToken) {
-    return downloadFromSharePointViaGraph(url, accessToken);
-  }
-  
-  // Otherwise, try direct download (for public files or local development)
-  return downloadFromSharePointDirect(url);
-}
-
-async function downloadFromSharePointViaGraph(url: string, accessToken: string): Promise<string> {
-  // Convert SharePoint URL to Graph API format
-  // SharePoint URL format: https://{tenant}-my.sharepoint.com/:x:/r/personal/{user}/{path}/file.csv?d=...&web=1&e=...
-  // Graph API format: https://graph.microsoft.com/v1.0/me/drive/root:/{relative-path}:/content
-  
-  try {
-    // Extract the base URL and path from SharePoint URL
-    const urlObj = new URL(url.split('?')[0]); // Remove query parameters
-    const hostname = urlObj.hostname; // e.g., perkinseastman-my.sharepoint.com
-    
-    // Extract the path - SharePoint URLs have format: /:x:/r/personal/{user}/Documents/.../file.csv
-    let serverRelativePath = urlObj.pathname;
-    
-    // Remove the /:x:/r part and get the actual path
-    // Format: /:x:/r/personal/{user}/Documents/Temp/api_test/Data/file.csv
-    const pathMatch = serverRelativePath.match(/\/:x:\/r\/(.+)$/);
-    if (pathMatch) {
-      let fullPath = pathMatch[1];
-      
-      // For personal OneDrive, remove /personal/{user} prefix to get relative path
-      // personal/g_dsouza_perkinseastman_com/Documents/... -> Documents/...
-      const personalMatch = fullPath.match(/^personal\/[^\/]+\/(.+)$/);
-      if (personalMatch) {
-        serverRelativePath = personalMatch[1];
-      } else {
-        serverRelativePath = fullPath;
-      }
-    }
-    
-    // Construct Graph API URL
-    // For OneDrive personal: /me/drive/root:/{relative-path}:/content
-    let graphUrl: string;
-    
-    if (hostname.includes('-my.sharepoint.com')) {
-      // Personal OneDrive - use /me/drive/root endpoint
-      graphUrl = `https://graph.microsoft.com/v1.0/me/drive/root:/${serverRelativePath}:/content`;
-    } else {
-      // SharePoint site - use /sites endpoint
-      graphUrl = `https://graph.microsoft.com/v1.0/sites/${hostname}:${serverRelativePath}:/content`;
-    }
-    
-    console.log('Graph API URL:', graphUrl);
-    
-    const response = await fetch(graphUrl, {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Accept': 'text/csv,text/plain,*/*',
-      },
-      cache: 'no-store',
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Graph API error:', errorText);
-      throw new Error(`Failed to download via Graph API: ${response.status} ${response.statusText}. ${errorText.substring(0, 200)}`);
-    }
-    
-    return await response.text();
-  } catch (error: any) {
-    console.error('Error downloading via Graph API:', error);
-    throw new Error(`Graph API download failed: ${error.message}`);
+// Custom error class for authentication errors
+export class SharePointAuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SharePointAuthError';
   }
 }
 
-async function downloadFromSharePointDirect(url: string): Promise<string> {
+async function downloadFromSharePointDirect(url: string, cookieHeader?: string): Promise<string> {
   // Convert SharePoint link to direct download format
   // SharePoint URLs format: .../Documents/.../file.csv?d=...&csf=1&web=1&e=...
   // Need to convert to: .../Documents/.../file.csv?download=1
@@ -145,32 +80,46 @@ async function downloadFromSharePointDirect(url: string): Promise<string> {
     'Accept-Language': 'en-US,en;q=0.9'
   };
 
+  // Forward cookies from the browser request to SharePoint
+  // This allows SharePoint to authenticate the user based on their browser session
+  if (cookieHeader) {
+    headers['Cookie'] = cookieHeader;
+  }
+
   const response = await fetch(downloadUrl, {
     headers,
     cache: 'no-store', // Don't cache CSV files
     redirect: 'follow'
   });
 
+  // Check for authentication errors (401, 403) or redirects to login
+  if (response.status === 401 || response.status === 403) {
+    throw new SharePointAuthError('Authentication required. Please sign in with your Microsoft 365 account to access this data.');
+  }
+
   if (!response.ok) {
     const errorText = await response.text();
-    // Check if we got HTML instead of CSV
-    if (errorText.includes('<html') || errorText.includes('<!DOCTYPE')) {
-      throw new Error(`SharePoint returned HTML instead of CSV. This usually means authentication is required. URL: ${downloadUrl.substring(0, 100)}...`);
+    // Check if we got HTML instead of CSV (likely a login page)
+    if (errorText.includes('<html') || errorText.includes('<!DOCTYPE') || 
+        errorText.includes('Sign in') || errorText.includes('Microsoft account')) {
+      throw new SharePointAuthError('Authentication required. Please sign in with your Microsoft 365 account to access this data.');
     }
     throw new Error(`Failed to download CSV: ${response.status} ${response.statusText}`);
   }
 
   const content = await response.text();
   
-  // Check if response is HTML (authentication page)
-  if (content.trim().startsWith('<!DOCTYPE') || content.trim().startsWith('<html') || content.includes('<!-- Copyright (C) Microsoft Corporation')) {
-    throw new Error(`SharePoint authentication required. The URL returned an HTML page instead of CSV. Please check that the SharePoint links are publicly accessible or use direct download links.`);
+  // Check if response is HTML (authentication/login page)
+  if (content.trim().startsWith('<!DOCTYPE') || content.trim().startsWith('<html') || 
+      content.includes('<!-- Copyright (C) Microsoft Corporation') ||
+      content.includes('Sign in') || content.includes('Microsoft account')) {
+    throw new SharePointAuthError('Authentication required. Please sign in with your Microsoft 365 account to access this data.');
   }
 
   return content;
 }
 
-async function loadCSVData(accessToken?: string) {
+async function loadCSVData(cookieHeader?: string) {
   const onedriveEmployeesUrl = process.env.ONEDRIVE_EMPLOYEES_URL || '';
   const onedriveProjectsUrl = process.env.ONEDRIVE_PROJECTS_URL || '';
   const onedriveProjectEmployeesUrl = process.env.ONEDRIVE_PROJECT_EMPLOYEES_URL || '';
@@ -183,16 +132,29 @@ async function loadCSVData(accessToken?: string) {
     let projectEmployeesContent: string;
 
     if (useOneDrive) {
-      // Load from OneDrive with access token if provided
-      employeesContent = await downloadFromOneDrive(onedriveEmployeesUrl, accessToken);
-      projectsContent = await downloadFromOneDrive(onedriveProjectsUrl, accessToken);
-      projectEmployeesContent = await downloadFromOneDrive(onedriveProjectEmployeesUrl, accessToken);
+      // Load from OneDrive/SharePoint - relies on browser cookies for authentication
+      // CSV files should be shared as "People in <YourOrg> with the link" NOT "Anyone with the link"
+      // Cookies are forwarded from the browser request to authenticate with SharePoint
+      employeesContent = await downloadFromSharePointDirect(onedriveEmployeesUrl, cookieHeader);
+      projectsContent = await downloadFromSharePointDirect(onedriveProjectsUrl, cookieHeader);
+      projectEmployeesContent = await downloadFromSharePointDirect(onedriveProjectEmployeesUrl, cookieHeader);
     } else {
       // Load from local files (for local development)
       const dataDir = join(process.cwd(), 'Data');
-      employeesContent = readFileSync(join(dataDir, 'employees.csv'), 'utf-8');
-      projectsContent = readFileSync(join(dataDir, 'projects.csv'), 'utf-8');
-      projectEmployeesContent = readFileSync(join(dataDir, 'project_employees.csv'), 'utf-8');
+      const employeesPath = join(dataDir, 'employees.csv');
+      const projectsPath = join(dataDir, 'projects.csv');
+      const projectEmployeesPath = join(dataDir, 'project_employees.csv');
+      
+      employeesContent = readFileSync(employeesPath, 'utf-8');
+      projectsContent = readFileSync(projectsPath, 'utf-8');
+      projectEmployeesContent = readFileSync(projectEmployeesPath, 'utf-8');
+      
+      // Store file modification times for cache invalidation
+      lastLoadTime = {
+        employees: statSync(employeesPath).mtimeMs,
+        projects: statSync(projectsPath).mtimeMs,
+        projectEmployees: statSync(projectEmployeesPath).mtimeMs
+      };
     }
 
     // Parse employees
@@ -245,7 +207,39 @@ async function loadCSVData(accessToken?: string) {
   }
 }
 
-export function ensureDataLoaded(accessToken?: string): Promise<void> {
+export function ensureDataLoaded(cookieHeader?: string): Promise<void> {
+  const onedriveEmployeesUrl = process.env.ONEDRIVE_EMPLOYEES_URL || '';
+  const onedriveProjectsUrl = process.env.ONEDRIVE_PROJECTS_URL || '';
+  const onedriveProjectEmployeesUrl = process.env.ONEDRIVE_PROJECT_EMPLOYEES_URL || '';
+  const useOneDrive = !!(onedriveEmployeesUrl || onedriveProjectsUrl || onedriveProjectEmployeesUrl);
+
+  // For local CSV files, check if files have been modified since last load
+  if (!useOneDrive && lastLoadTime) {
+    try {
+      const dataDir = join(process.cwd(), 'Data');
+      const employeesStat = statSync(join(dataDir, 'employees.csv'));
+      const projectsStat = statSync(join(dataDir, 'projects.csv'));
+      const projectEmployeesStat = statSync(join(dataDir, 'project_employees.csv'));
+
+      // If any file has been modified, clear cache and reload
+      if (
+        employeesStat.mtimeMs > lastLoadTime.employees ||
+        projectsStat.mtimeMs > lastLoadTime.projects ||
+        projectEmployeesStat.mtimeMs > lastLoadTime.projectEmployees
+      ) {
+        console.log('CSV files modified, reloading data...');
+        employeesData = [];
+        projectsData = [];
+        projectEmployeesData = [];
+        dataLoadPromise = null;
+        lastLoadTime = null;
+      }
+    } catch (error) {
+      // If we can't check file times, continue with normal flow
+      console.warn('Could not check file modification times:', error);
+    }
+  }
+
   // If data is already loaded, return immediately
   if (employeesData.length > 0 && projectsData.length > 0) {
     return Promise.resolve();
@@ -256,9 +250,19 @@ export function ensureDataLoaded(accessToken?: string): Promise<void> {
     return dataLoadPromise;
   }
 
-  // Start loading
-  dataLoadPromise = loadCSVData(accessToken);
+  // Start loading - relies on SharePoint permissions via browser cookies
+  // Cookie header is forwarded from the browser request to authenticate with SharePoint
+  dataLoadPromise = loadCSVData(cookieHeader);
   return dataLoadPromise;
+}
+
+// Function to manually clear cache (useful for development)
+export function clearDataCache(): void {
+  employeesData = [];
+  projectsData = [];
+  projectEmployeesData = [];
+  dataLoadPromise = null;
+  lastLoadTime = null;
 }
 
 export function getEmployeesData(): Employee[] {
@@ -278,7 +282,22 @@ export function getEmployeeProjects(employeeId: number): Project[] {
     .filter(rel => rel.EmployeeID === employeeId)
     .map(rel => rel.ProjectID);
 
-  return projectsData.filter(proj => projectIds.includes(proj.id));
+  const projects = projectsData.filter(proj => projectIds.includes(proj.id));
+  
+  // Ensure each project has an OpenAsset URL constructed from its ID
+  // OpenAsset URL format: https://perkinseastman.openasset.com/page/project/{id}/
+  const openAssetBaseUrl = process.env.OPENASSET_BASE_URL || 'https://perkinseastman.openasset.com';
+  
+  return projects.map(proj => {
+    // Use existing URL if present, otherwise construct from ID
+    // Correct format: /page/project/{id}/
+    const openassetUrl = proj.openasset_url || (proj.id ? `${openAssetBaseUrl}/page/project/${proj.id}/` : undefined);
+    
+    return {
+      ...proj,
+      openasset_url: openassetUrl
+    };
+  });
 }
 
 // Initialize data on module load (for serverless, this will run on cold start)

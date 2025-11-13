@@ -1,7 +1,7 @@
 // app/api/export/employees/route.ts - Excel export endpoint
 import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
-import { ensureDataLoaded, getEmployeesData, getProjectsData, getProjectEmployeesData } from '@/lib/csv-loader';
+import { ensureDataLoaded, getEmployeesData, getProjectsData, getProjectEmployeesData, SharePointAuthError } from '@/lib/csv-loader';
 
 function parseFilterList(param: string | null): string[] {
   if (!param) return [];
@@ -41,11 +41,10 @@ function matchesRangeFilter(value: number | undefined, rangeFilters: string[]): 
 
 export async function GET(request: NextRequest) {
   try {
-    // Get access token from Authorization header
-    const authHeader = request.headers.get('authorization');
-    const accessToken = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : undefined;
-    
-    await ensureDataLoaded(accessToken);
+    // Forward cookies from browser request to SharePoint for authentication
+    // CSV files should be shared as "People in <YourOrg> with the link" NOT "Anyone with the link"
+    const cookieHeader = request.headers.get('cookie') || undefined;
+    await ensureDataLoaded(cookieHeader);
     
     const searchParams = request.nextUrl.searchParams;
     const practiceArea = parseFilterList(searchParams.get('practice_area'));
@@ -190,6 +189,15 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Error exporting employees:', error);
+    
+    // Handle authentication errors
+    if (error instanceof SharePointAuthError) {
+      return NextResponse.json({ 
+        error: error.message,
+        requiresAuth: true 
+      }, { status: 401 });
+    }
+    
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

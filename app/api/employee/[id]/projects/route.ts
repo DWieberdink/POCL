@@ -1,17 +1,16 @@
 // app/api/employee/[id]/projects/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { ensureDataLoaded, getEmployeeProjects } from '@/lib/csv-loader';
+import { ensureDataLoaded, getEmployeeProjects, SharePointAuthError } from '@/lib/csv-loader';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    // Get access token from Authorization header
-    const authHeader = request.headers.get('authorization');
-    const accessToken = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : undefined;
+    // Forward cookies from browser request to SharePoint for authentication
+    const cookieHeader = request.headers.get('cookie') || undefined;
+    await ensureDataLoaded(cookieHeader);
     
-    await ensureDataLoaded(accessToken);
     const employeeId = parseInt(params.id);
     
     if (isNaN(employeeId)) {
@@ -22,6 +21,14 @@ export async function GET(
     
     return NextResponse.json({ projects });
   } catch (error: any) {
+    // Handle authentication errors
+    if (error instanceof SharePointAuthError) {
+      return NextResponse.json({ 
+        error: error.message,
+        requiresAuth: true 
+      }, { status: 401 });
+    }
+    
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

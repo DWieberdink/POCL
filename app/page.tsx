@@ -1,13 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useMsal, useIsAuthenticated, useAccount } from '@azure/msal-react';
-import { loginRequest } from '@/lib/msalConfig';
 import { MultiSelect } from '@/components/MultiSelect';
 import { FilterSection } from '@/components/FilterSection';
 import { EmployeeCard } from '@/components/EmployeeCard';
 import { EmployeeModal } from '@/components/EmployeeModal';
-import { AuthButton } from '@/components/AuthButton';
+import { AuthRequired } from '@/components/AuthRequired';
 
 interface Employee {
     id: number;
@@ -21,11 +19,6 @@ interface Employee {
     img_url?: string;
 }
 
-interface User {
-    name?: string;
-    email?: string;
-    authenticated?: boolean;
-}
 
 const studioOptions = [
     { value: '', label: 'All Studios' },
@@ -206,17 +199,13 @@ const jobTitleOptions = [
 ];
 
 export default function EmployeeDirectory() {
-    const { instance } = useMsal();
-    const isAuthenticated = useIsAuthenticated();
-    const account = useAccount();
-    
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [requiresAuth, setRequiresAuth] = useState(false);
     const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [user, setUser] = useState<User | null>(null);
     
     // Filter states
     const [nameSearch, setNameSearch] = useState('');
@@ -237,11 +226,15 @@ export default function EmployeeDirectory() {
     useEffect(() => {
         const loadOptions = async () => {
             try {
-                const [practiceRes, subPracticeRes, userRes] = await Promise.all([
+                const [practiceRes, subPracticeRes] = await Promise.all([
                     fetch('/api/practice-areas'),
-                    fetch('/api/sub-practice-areas'),
-                    fetch('/api/user')
+                    fetch('/api/sub-practice-areas')
                 ]);
+                
+                if (practiceRes.status === 401 || subPracticeRes.status === 401) {
+                    setRequiresAuth(true);
+                    return;
+                }
                 
                 if (practiceRes.ok) {
                     const data = await practiceRes.json();
@@ -257,11 +250,6 @@ export default function EmployeeDirectory() {
                         { value: '', label: 'All Sub-Practice Areas' },
                         ...(data.sub_practice_areas || []).map((spa: string) => ({ value: spa, label: spa }))
                     ]);
-                }
-                
-                if (userRes.ok) {
-                    const userData = await userRes.json();
-                    setUser(userData);
                 }
             } catch (error) {
                 console.error('Error loading options:', error);
@@ -290,28 +278,9 @@ export default function EmployeeDirectory() {
     const searchEmployees = async () => {
         setLoading(true);
         setError('');
+        setRequiresAuth(false);
         
         try {
-            // Get access token if authenticated
-            let accessToken: string | undefined;
-            if (isAuthenticated && account) {
-                try {
-                    const response = await instance.acquireTokenSilent({
-                        ...loginRequest,
-                        account: account,
-                    });
-                    accessToken = response.accessToken;
-                } catch (error) {
-                    // If silent token acquisition fails, try popup
-                    try {
-                        const response = await instance.acquireTokenPopup(loginRequest);
-                        accessToken = response.accessToken;
-                    } catch (popupError) {
-                        console.error('Failed to acquire token:', popupError);
-                    }
-                }
-            }
-            
             const params = new URLSearchParams();
             if (practiceArea.length > 0) params.append('practice_area', practiceArea.join(','));
             if (subPracticeArea.length > 0) params.append('sub_practice_area', subPracticeArea.join(','));
@@ -323,15 +292,14 @@ export default function EmployeeDirectory() {
             if (jobTitle.length > 0) params.append('job_title', jobTitle.join(','));
             if (nameSearch.trim()) params.append('name_search', nameSearch.trim());
             
-            const headers: HeadersInit = {};
-            if (accessToken) {
-                headers['Authorization'] = `Bearer ${accessToken}`;
-            }
-            
-            const response = await fetch(`/api/employees?${params.toString()}`, {
-                headers,
-            });
+            const response = await fetch(`/api/employees?${params.toString()}`);
             const data = await response.json();
+            
+            if (response.status === 401 || data.requiresAuth) {
+                setRequiresAuth(true);
+                setError(data.error || 'Authentication required');
+                return;
+            }
             
             if (!response.ok) {
                 throw new Error(data.error || 'Failed to search employees');
@@ -362,26 +330,6 @@ export default function EmployeeDirectory() {
 
     const exportToExcel = async () => {
         try {
-            // Get access token if authenticated
-            let accessToken: string | undefined;
-            if (isAuthenticated && account) {
-                try {
-                    const response = await instance.acquireTokenSilent({
-                        ...loginRequest,
-                        account: account,
-                    });
-                    accessToken = response.accessToken;
-                } catch (error) {
-                    // If silent token acquisition fails, try popup
-                    try {
-                        const response = await instance.acquireTokenPopup(loginRequest);
-                        accessToken = response.accessToken;
-                    } catch (popupError) {
-                        console.error('Failed to acquire token:', popupError);
-                    }
-                }
-            }
-            
             const params = new URLSearchParams();
             if (practiceArea.length > 0) params.append('practice_area', practiceArea.join(','));
             if (subPracticeArea.length > 0) params.append('sub_practice_area', subPracticeArea.join(','));
@@ -393,14 +341,14 @@ export default function EmployeeDirectory() {
             if (jobTitle.length > 0) params.append('job_title', jobTitle.join(','));
             if (nameSearch.trim()) params.append('name_search', nameSearch.trim());
             
-            const headers: HeadersInit = {};
-            if (accessToken) {
-                headers['Authorization'] = `Bearer ${accessToken}`;
-            }
+            const response = await fetch(`/api/export/employees?${params.toString()}`);
             
-            const response = await fetch(`/api/export/employees?${params.toString()}`, {
-                headers,
-            });
+            if (response.status === 401) {
+                const data = await response.json();
+                setRequiresAuth(true);
+                setError(data.error || 'Authentication required');
+                return;
+            }
             
             if (!response.ok) {
                 throw new Error('Failed to export employees');
@@ -434,6 +382,36 @@ export default function EmployeeDirectory() {
                       studio.length > 0 || yearsExperience.length > 0 || yearsAtPE.length > 0 || 
                       role.length > 0 || jobTitle.length > 0 || nameSearch.trim();
 
+    // Show auth required component if authentication is needed
+    if (requiresAuth) {
+        return (
+            <div className="app">
+                <header className="header">
+                    <div className="container">
+                        <div className="header-content">
+                            <img src="/pe-logo.png" alt="Perkins Eastman" className="logo" />
+                            <div className="header-text">
+                                <h1>Employee Directory</h1>
+                                <p className="tagline">Human by Design</p>
+                            </div>
+                        </div>
+                    </div>
+                </header>
+
+                <main className="main">
+                    <div className="container">
+                        <AuthRequired onRetry={() => {
+                            setRequiresAuth(false);
+                            setError('');
+                            // Retry loading options
+                            window.location.reload();
+                        }} />
+                    </div>
+                </main>
+            </div>
+        );
+    }
+
     return (
         <div className="app">
             <header className="header">
@@ -443,9 +421,6 @@ export default function EmployeeDirectory() {
                         <div className="header-text">
                             <h1>Employee Directory</h1>
                             <p className="tagline">Human by Design</p>
-                        </div>
-                        <div style={{ marginLeft: 'auto' }}>
-                            <AuthButton />
                         </div>
                     </div>
                 </div>
