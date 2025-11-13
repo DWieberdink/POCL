@@ -6,18 +6,8 @@ import { FilterSection } from '@/components/FilterSection';
 import { EmployeeCard } from '@/components/EmployeeCard';
 import { EmployeeModal } from '@/components/EmployeeModal';
 import { AuthRequired } from '@/components/AuthRequired';
-
-interface Employee {
-    id: number;
-    first_name: string;
-    last_name: string;
-    email?: string;
-    phone?: string;
-    title?: string;
-    job_title?: string;
-    office?: string;
-    img_url?: string;
-}
+import { loadAllCSVData, SharePointAuthError, Employee, Project, ProjectEmployee } from '@/lib/client-csv-loader';
+import { filterEmployees, getPracticeAreas, getSubPracticeAreas, FilterParams } from '@/lib/client-filter';
 
 
 const studioOptions = [
@@ -199,9 +189,13 @@ const jobTitleOptions = [
 ];
 
 export default function EmployeeDirectory() {
+    const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
+    const [allProjects, setAllProjects] = useState<Project[]>([]);
+    const [allProjectEmployees, setAllProjectEmployees] = useState<ProjectEmployee[]>([]);
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
     const [loading, setLoading] = useState(false);
+    const [initialLoading, setInitialLoading] = useState(true);
     const [error, setError] = useState('');
     const [requiresAuth, setRequiresAuth] = useState(false);
     const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
@@ -222,43 +216,90 @@ export default function EmployeeDirectory() {
     const [practiceAreaOptions, setPracticeAreaOptions] = useState<Array<{ value: string; label: string }>>([]);
     const [subPracticeAreaOptions, setSubPracticeAreaOptions] = useState<Array<{ value: string; label: string }>>([]);
 
-    // Load practice areas and sub-practice areas
+    // Load CSV data on mount (client-side)
     useEffect(() => {
-        const loadOptions = async () => {
+        const loadCSVData = async () => {
+            setInitialLoading(true);
+            setError('');
+            setRequiresAuth(false);
+            
             try {
-                const [practiceRes, subPracticeRes] = await Promise.all([
-                    fetch('/api/practice-areas'),
-                    fetch('/api/sub-practice-areas')
+                console.log('[Page] Loading CSV data from SharePoint...');
+                const data = await loadAllCSVData();
+                
+                setAllEmployees(data.employees);
+                setAllProjects(data.projects);
+                setAllProjectEmployees(data.projectEmployees);
+                
+                // Extract practice areas and sub-practice areas from projects
+                const practiceAreas = getPracticeAreas(data.projects);
+                const subPracticeAreas = getSubPracticeAreas(data.projects);
+                
+                setPracticeAreaOptions([
+                    { value: '', label: 'All Project Types' },
+                    ...practiceAreas.map(pa => ({ value: pa, label: pa }))
                 ]);
                 
-                if (practiceRes.status === 401 || subPracticeRes.status === 401) {
+                setSubPracticeAreaOptions([
+                    { value: '', label: 'All Sub-Practice Areas' },
+                    ...subPracticeAreas.map(spa => ({ value: spa, label: spa }))
+                ]);
+                
+                console.log('[Page] CSV data loaded successfully');
+            } catch (err: any) {
+                console.error('[Page] Error loading CSV data:', err);
+                if (err instanceof SharePointAuthError) {
                     setRequiresAuth(true);
-                    return;
+                    setError(err.message);
+                } else {
+                    setError(err.message || 'Failed to load employee data. Please try again.');
                 }
-                
-                if (practiceRes.ok) {
-                    const data = await practiceRes.json();
-                    setPracticeAreaOptions([
-                        { value: '', label: 'All Project Types' },
-                        ...(data.practice_areas || []).map((pa: string) => ({ value: pa, label: pa }))
-                    ]);
-                }
-                
-                if (subPracticeRes.ok) {
-                    const data = await subPracticeRes.json();
-                    setSubPracticeAreaOptions([
-                        { value: '', label: 'All Sub-Practice Areas' },
-                        ...(data.sub_practice_areas || []).map((spa: string) => ({ value: spa, label: spa }))
-                    ]);
-                }
-            } catch (error) {
-                console.error('Error loading options:', error);
+            } finally {
+                setInitialLoading(false);
             }
         };
-        loadOptions();
+        
+        loadCSVData();
     }, []);
 
-    // Filter employees by name search
+    // Filter employees client-side whenever filters change
+    useEffect(() => {
+        if (allEmployees.length === 0) {
+            setEmployees([]);
+            setFilteredEmployees([]);
+            return;
+        }
+
+        const filters: FilterParams = {
+            practiceArea,
+            subPracticeArea,
+            region,
+            studio,
+            yearsExperience,
+            yearsAtPE,
+            role,
+            jobTitle,
+            nameSearch,
+        };
+
+        const filtered = filterEmployees(allEmployees, allProjects, allProjectEmployees, filters);
+        setEmployees(filtered);
+    }, [
+        allEmployees,
+        allProjects,
+        allProjectEmployees,
+        practiceArea,
+        subPracticeArea,
+        region,
+        studio,
+        yearsExperience,
+        yearsAtPE,
+        role,
+        jobTitle,
+        nameSearch,
+    ]);
+
+    // Filter employees by name search (for display)
     useEffect(() => {
         if (!nameSearch.trim()) {
             setFilteredEmployees(employees);
@@ -266,8 +307,8 @@ export default function EmployeeDirectory() {
             const searchTerm = nameSearch.toLowerCase().trim();
             setFilteredEmployees(employees.filter(emp => {
                 const fullName = `${emp.first_name} ${emp.last_name}`.toLowerCase();
-                const firstName = emp.first_name.toLowerCase();
-                const lastName = emp.last_name.toLowerCase();
+                const firstName = emp.first_name?.toLowerCase() || '';
+                const lastName = emp.last_name?.toLowerCase() || '';
                 return fullName.includes(searchTerm) || 
                        firstName.includes(searchTerm) || 
                        lastName.includes(searchTerm);
@@ -275,42 +316,10 @@ export default function EmployeeDirectory() {
         }
     }, [nameSearch, employees]);
 
-    const searchEmployees = async () => {
-        setLoading(true);
-        setError('');
-        setRequiresAuth(false);
-        
-        try {
-            const params = new URLSearchParams();
-            if (practiceArea.length > 0) params.append('practice_area', practiceArea.join(','));
-            if (subPracticeArea.length > 0) params.append('sub_practice_area', subPracticeArea.join(','));
-            if (region.length > 0) params.append('region', region.join(','));
-            if (studio.length > 0) params.append('studio', studio.join(','));
-            if (yearsExperience.length > 0) params.append('years_experience', yearsExperience.join(','));
-            if (yearsAtPE.length > 0) params.append('years_at_pe', yearsAtPE.join(','));
-            if (role.length > 0) params.append('role', role.join(','));
-            if (jobTitle.length > 0) params.append('job_title', jobTitle.join(','));
-            if (nameSearch.trim()) params.append('name_search', nameSearch.trim());
-            
-            const response = await fetch(`/api/employees?${params.toString()}`);
-            const data = await response.json();
-            
-            if (response.status === 401 || data.requiresAuth) {
-                setRequiresAuth(true);
-                setError(data.error || 'Authentication required');
-                return;
-            }
-            
-            if (!response.ok) {
-                throw new Error(data.error || 'Failed to search employees');
-            }
-            
-            setEmployees(data.employees || []);
-        } catch (err: any) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
+    const searchEmployees = () => {
+        // Client-side filtering is now automatic via useEffect
+        // This function is kept for compatibility but does nothing
+        setLoading(false);
     };
 
     const clearResults = () => {
@@ -330,6 +339,8 @@ export default function EmployeeDirectory() {
 
     const exportToExcel = async () => {
         try {
+            // Send filtered employees to API for Excel generation
+            // We still use the API for Excel generation since it requires server-side libraries
             const params = new URLSearchParams();
             if (practiceArea.length > 0) params.append('practice_area', practiceArea.join(','));
             if (subPracticeArea.length > 0) params.append('sub_practice_area', subPracticeArea.join(','));
@@ -403,23 +414,30 @@ export default function EmployeeDirectory() {
                         <AuthRequired onRetry={async () => {
                             setRequiresAuth(false);
                             setError('');
-                            // Retry loading options and data
+                            // Retry loading CSV data client-side
                             try {
-                                const [practiceRes, subPracticeRes] = await Promise.all([
-                                    fetch('/api/practice-areas'),
-                                    fetch('/api/sub-practice-areas')
+                                const data = await loadAllCSVData();
+                                setAllEmployees(data.employees);
+                                setAllProjects(data.projects);
+                                setAllProjectEmployees(data.projectEmployees);
+                                
+                                const practiceAreas = getPracticeAreas(data.projects);
+                                const subPracticeAreas = getSubPracticeAreas(data.projects);
+                                
+                                setPracticeAreaOptions([
+                                    { value: '', label: 'All Project Types' },
+                                    ...practiceAreas.map(pa => ({ value: pa, label: pa }))
                                 ]);
                                 
-                                if (practiceRes.status === 401 || subPracticeRes.status === 401) {
-                                    setRequiresAuth(true);
-                                    return;
-                                }
-                                
-                                // If successful, reload the page to get fresh data
-                                window.location.reload();
+                                setSubPracticeAreaOptions([
+                                    { value: '', label: 'All Sub-Practice Areas' },
+                                    ...subPracticeAreas.map(spa => ({ value: spa, label: spa }))
+                                ]);
                             } catch (error) {
                                 console.error('Retry failed:', error);
-                                window.location.reload();
+                                if (error instanceof SharePointAuthError) {
+                                    setRequiresAuth(true);
+                                }
                             }
                         }} />
                     </div>
@@ -543,19 +561,24 @@ export default function EmployeeDirectory() {
                         </div>
 
                         <div className="action-buttons">
-                            <button className="btn btn-primary" onClick={searchEmployees} disabled={loading}>
-                                <i className="fas fa-search"></i>
-                                {loading ? 'Searching...' : 'Search Employees'}
-                            </button>
-                            <button className="btn btn-outline" onClick={clearResults}>
-                                <i className="fas fa-times"></i>
-                                Clear Results
-                            </button>
-                            {employees.length > 0 && (
-                                <button className="btn btn-export" onClick={exportToExcel}>
-                                    <i className="fas fa-file-excel"></i>
-                                    Export Excel
+                            {initialLoading ? (
+                                <button className="btn btn-primary" disabled>
+                                    <i className="fas fa-spinner fa-spin"></i>
+                                    Loading Data...
                                 </button>
+                            ) : (
+                                <>
+                                    <button className="btn btn-outline" onClick={clearResults}>
+                                        <i className="fas fa-times"></i>
+                                        Clear Filters
+                                    </button>
+                                    {employees.length > 0 && (
+                                        <button className="btn btn-export" onClick={exportToExcel}>
+                                            <i className="fas fa-file-excel"></i>
+                                            Export Excel
+                                        </button>
+                                    )}
+                                </>
                             )}
                         </div>
                     </section>
@@ -566,17 +589,19 @@ export default function EmployeeDirectory() {
                                 {hasFilters ? `Filtered Results` : employees.length > 0 ? 'All Employees' : 'Ready to Search'}
                             </h3>
                             <div className="results-count">
-                                {employees.length > 0 
+                                {initialLoading 
+                                    ? 'Loading data from SharePoint...'
+                                    : employees.length > 0 
                                     ? `${filteredEmployees.length} employees found`
-                                    : 'Click "Search Employees" to start'
+                                    : 'Use filters above to search employees'
                                 }
                             </div>
                         </div>
 
-                        {loading && (
+                        {initialLoading && (
                             <div className="loading">
                                 <div className="loading-spinner"></div>
-                                <p>Loading employees...</p>
+                                <p>Loading employee data from SharePoint...</p>
                             </div>
                         )}
 
@@ -584,7 +609,7 @@ export default function EmployeeDirectory() {
                             <div className="error-message">{error}</div>
                         )}
 
-                        {!loading && !error && (
+                        {!initialLoading && !error && (
                             <div className="employees-grid">
                                 {filteredEmployees.length === 0 && employees.length > 0 ? (
                                     <div className="no-results">
@@ -611,11 +636,13 @@ export default function EmployeeDirectory() {
                 </div>
             </main>
 
-            <EmployeeModal
-                employee={selectedEmployee}
-                isOpen={isModalOpen}
-                onClose={closeModal}
-            />
+                        <EmployeeModal
+                            employee={selectedEmployee}
+                            isOpen={isModalOpen}
+                            onClose={closeModal}
+                            projects={allProjects}
+                            projectEmployees={allProjectEmployees}
+                        />
         </div>
     );
 }

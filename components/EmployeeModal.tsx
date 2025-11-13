@@ -25,14 +25,21 @@ interface Project {
     openasset_url?: string;
 }
 
+interface ProjectEmployee {
+    ProjectID: number;
+    EmployeeID: number;
+}
+
 interface EmployeeModalProps {
     employee: Employee | null;
     isOpen: boolean;
     onClose: () => void;
+    projects?: Project[];
+    projectEmployees?: ProjectEmployee[];
     onLoadProjects?: (employeeId: number, filters: any) => void;
 }
 
-export function EmployeeModal({ employee, isOpen, onClose }: EmployeeModalProps) {
+export function EmployeeModal({ employee, isOpen, onClose, projects: allProjects = [], projectEmployees: allProjectEmployees = [] }: EmployeeModalProps) {
     const [projects, setProjects] = useState<Project[]>([]);
     const [loadingProjects, setLoadingProjects] = useState(false);
     const [summary, setSummary] = useState('');
@@ -69,17 +76,39 @@ export function EmployeeModal({ employee, isOpen, onClose }: EmployeeModalProps)
         }
     };
 
-    const loadEmployeeProjects = async () => {
+    const loadEmployeeProjects = () => {
         if (!employee) return;
         setLoadingProjects(true);
         try {
-            const response = await fetch(`/api/employee/${employee.id}/projects`);
-            const data = await response.json();
-            
-            if (response.ok) {
-                setProjects(data.projects || []);
+            // Use client-side data if available
+            if (allProjects.length > 0 && allProjectEmployees.length > 0) {
+                const employeeId = employee.id || (employee as any).EmployeeID;
+                const projectIds = allProjectEmployees
+                    .filter(rel => rel.EmployeeID === employeeId)
+                    .map(rel => rel.ProjectID);
+
+                const employeeProjects = allProjects.filter(proj => projectIds.includes(proj.id));
+                
+                // Ensure each project has an OpenAsset URL
+                const openAssetBaseUrl = process.env.NEXT_PUBLIC_OPENASSET_BASE_URL || 'https://perkinseastman.openasset.com';
+                const projectsWithUrls = employeeProjects.map(proj => ({
+                    ...proj,
+                    openasset_url: proj.openasset_url || (proj.id ? `${openAssetBaseUrl}/page/project/${proj.id}/` : undefined)
+                }));
+                
+                setProjects(projectsWithUrls);
             } else {
-                console.error('Error loading projects:', data.error);
+                // Fallback to API if client-side data not available
+                fetch(`/api/employee/${employee.id}/projects`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.projects) {
+                            setProjects(data.projects);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error loading projects:', error);
+                    });
             }
         } catch (error) {
             console.error('Error loading projects:', error);

@@ -22,18 +22,22 @@ Vercel should auto-detect:
 
 In Vercel project settings → **Environment Variables**, add:
 
-#### Required (for SharePoint authentication):
+#### Required (for client-side CSV fetching):
+**IMPORTANT:** These must be prefixed with `NEXT_PUBLIC_` to be accessible in the browser:
+
 ```
-ONEDRIVE_EMPLOYEES_URL=https://perkinseastman-my.sharepoint.com/.../employees.csv?download=1
-ONEDRIVE_PROJECTS_URL=https://perkinseastman-my.sharepoint.com/.../projects.csv?download=1
-ONEDRIVE_PROJECT_EMPLOYEES_URL=https://perkinseastman-my.sharepoint.com/.../project_employees.csv?download=1
+NEXT_PUBLIC_ONEDRIVE_EMPLOYEES_URL=https://perkinseastman-my.sharepoint.com/.../employees.csv?download=1
+NEXT_PUBLIC_ONEDRIVE_PROJECTS_URL=https://perkinseastman-my.sharepoint.com/.../projects.csv?download=1
+NEXT_PUBLIC_ONEDRIVE_PROJECT_EMPLOYEES_URL=https://perkinseastman-my.sharepoint.com/.../project_employees.csv?download=1
 ```
 
 #### Optional:
 ```
 NEXT_PUBLIC_SHAREPOINT_URL=https://perkinseastman.sharepoint.com
-OPENASSET_BASE_URL=https://perkinseastman.openasset.com
+NEXT_PUBLIC_OPENASSET_BASE_URL=https://perkinseastman.openasset.com
 ```
+
+**Note:** The `NEXT_PUBLIC_` prefix is required because these URLs are used in client-side code (browser). Without this prefix, the variables won't be accessible in the browser.
 
 **Important:** 
 - Replace `...` with your actual SharePoint file paths
@@ -55,21 +59,120 @@ OPENASSET_BASE_URL=https://perkinseastman.openasset.com
 5. Return to app tab → Click "I've Signed In - Retry Now"
 6. App should now work! ✅
 
+## How to Check Environment Variables
+
+### Method 1: Vercel Dashboard (Recommended)
+
+1. Go to [vercel.com](https://vercel.com) and sign in
+2. Select your project (e.g., `POCL`)
+3. Click **Settings** (gear icon in top navigation)
+4. Click **Environment Variables** in the left sidebar
+5. You should see these variables listed:
+   - ✅ `ONEDRIVE_EMPLOYEES_URL`
+   - ✅ `ONEDRIVE_PROJECTS_URL`
+   - ✅ `ONEDRIVE_PROJECT_EMPLOYEES_URL`
+   - (Optional) `NEXT_PUBLIC_SHAREPOINT_URL`
+   - (Optional) `OPENASSET_BASE_URL`
+
+**Important:** Make sure each variable is set for:
+- ✅ **Production** (for live site)
+- ✅ **Preview** (for preview deployments)
+- ✅ **Development** (optional, for local dev)
+
+**To add/edit variables:**
+- Click on a variable name to edit
+- Or click **"Add New"** to create a new one
+- Make sure to select the right **Environment** (Production/Preview/Development)
+
+### Method 2: Using the Test Auth Endpoint
+
+After deployment, visit:
+```
+https://your-project.vercel.app/api/test-auth
+```
+
+Look for the `environment` object in the JSON response:
+
+```json
+{
+  "environment": {
+    "hasOneDriveUrls": true,        // ✅ Should be true
+    "hasEmployeesUrl": true,        // ✅ Should be true
+    "hasProjectsUrl": true,         // ✅ Should be true
+    "hasProjectEmployeesUrl": true, // ✅ Should be true
+    "forceLocalCsv": false,         // Should be false for Vercel
+    "nodeEnv": "production",        // Should be "production"
+    "vercelUrl": "...",             // Your Vercel URL
+    "vercelEnv": "production"       // Should be "production"
+  },
+  "diagnosis": "..."
+}
+```
+
+**What to check:**
+- ✅ All `has*Url` fields should be `true`
+- ✅ `diagnosis` will tell you if variables are missing
+- ✅ If `hasOneDriveUrls: false` → Variables are NOT set correctly
+
 ## Testing Endpoints
 
 After deployment, test these URLs:
 
 - **Main App:** `https://your-project.vercel.app`
 - **Test Page:** `https://your-project.vercel.app/test`
-- **Auth Test API:** `https://your-project.vercel.app/api/test-auth`
+- **Auth Test API:** `https://your-project.vercel.app/api/test-auth` ← **Use this to check env vars!**
 - **Employees API:** `https://your-project.vercel.app/api/employees`
 
 ## Troubleshooting
+
+### ⚠️ CRITICAL: SharePoint Cookie Limitation
+
+**The Problem:** SharePoint cookies (`FedAuth`, `rtFa`) are **domain-specific** and will **NOT** be sent from your browser to `*.vercel.app` domains. This is a browser security feature (Same-Origin Policy).
+
+**What This Means:**
+- ✅ Environment variables are set correctly (`hasOneDriveUrls: true`)
+- ❌ Browser cannot forward SharePoint cookies to Vercel
+- ❌ Vercel server cannot access SharePoint files without authentication
+
+**Current Status:** Your test shows:
+```json
+{
+  "environment": {
+    "hasOneDriveUrls": true,  // ✅ Variables are set
+    "hasEmployeesUrl": true,  // ✅ All URLs configured
+    "hasProjectsUrl": true,
+    "hasProjectEmployeesUrl": true
+  },
+  "diagnosis": "NO_COOKIES: No cookies received..."
+}
+```
+
+**Possible Solutions:**
+
+#### Option 1: Use a Custom Domain (Recommended)
+1. Add a custom domain to your Vercel project (e.g., `pocl.perkinseastman.com`)
+2. Configure SharePoint to allow cookies for your custom domain
+3. This requires IT/admin support to configure SharePoint CORS/cookie settings
+
+#### Option 2: Client-Side Fetch (Workaround)
+Modify the app to fetch CSV files directly from the browser (not through Vercel API):
+- Browser → SharePoint (cookies work ✅)
+- Parse CSV in browser
+- Send parsed data to Vercel API
+
+**Note:** This requires code changes and has security implications.
+
+#### Option 3: Use Proper OAuth/MSAL
+Implement full Microsoft Authentication Library (MSAL) flow:
+- More complex but proper solution
+- Requires Azure AD app registration
+- Provides secure token-based authentication
 
 ### Issue: Still seeing "Authentication Required"
 - **Check:** Are you signed into Microsoft 365 in your browser?
 - **Check:** Are CSV files shared correctly in SharePoint?
 - **Check:** Are environment variables set correctly in Vercel?
+- **Check:** Are you experiencing the cookie limitation above?
 
 ### Issue: Build fails
 - **Check:** Node.js version (should be 18+)
@@ -77,9 +180,10 @@ After deployment, test these URLs:
 - **Check:** All dependencies are in package.json
 
 ### Issue: CSV files not loading
-- **Check:** Environment variables are set
+- **Check:** Environment variables are set (use `/api/test-auth` to verify)
 - **Check:** SharePoint URLs are correct and accessible
 - **Check:** File sharing settings ("People in org" not "Anyone")
+- **Check:** Cookie limitation (see critical issue above)
 
 ## Post-Deployment Checklist
 

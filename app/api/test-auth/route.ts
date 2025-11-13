@@ -27,17 +27,27 @@ export async function GET(request: NextRequest) {
     );
     
     if (!cookieHeader) {
+      const isVercel = process.env.VERCEL_URL || process.env.VERCEL_ENV;
       sharePointTest = {
         error: 'No cookies received from browser',
-        note: 'SharePoint cookies are domain-specific and won\'t be sent to localhost. This is normal for local testing.',
-        solution: 'Test authentication on Vercel deployment where cookies will work correctly'
+        note: isVercel 
+          ? 'SharePoint cookies are domain-specific and won\'t be sent to *.vercel.app domains. This is a browser security limitation (Same-Origin Policy).'
+          : 'SharePoint cookies are domain-specific and won\'t be sent to localhost. This is normal for local testing.',
+        solution: isVercel
+          ? 'SharePoint cookies only work on sharepoint.com domain. Consider: 1) Using a custom domain, 2) Client-side fetch, or 3) Proper OAuth/MSAL flow.'
+          : 'For local testing, use FORCE_LOCAL_CSV=true to skip authentication'
       };
     } else if (!hasSharePointCookies) {
+      const isVercel = process.env.VERCEL_URL || process.env.VERCEL_ENV;
       sharePointTest = {
         error: 'No SharePoint/Microsoft authentication cookies found',
-        receivedCookies: cookieNames,
-        note: 'SharePoint cookies are only sent to sharepoint.com domain, not localhost',
-        solution: 'For local testing: Use local CSV files OR test on Vercel deployment'
+        receivedCookies: info.cookieNames,
+        note: isVercel
+          ? 'SharePoint cookies are only sent to sharepoint.com domain, not *.vercel.app. This is expected browser behavior.'
+          : 'SharePoint cookies are only sent to sharepoint.com domain, not localhost',
+        solution: isVercel
+          ? 'The current architecture cannot forward SharePoint cookies to Vercel. See troubleshooting guide for solutions.'
+          : 'For local testing: Use local CSV files OR test on Vercel deployment'
       };
     } else {
       // Try fetching with cookies
