@@ -248,11 +248,32 @@ export default function EmployeeDirectory() {
                 console.log('[Page] CSV data loaded successfully');
             } catch (err: any) {
                 console.error('[Page] Error loading CSV data:', err);
+                console.error('[Page] Error details:', {
+                    message: err.message,
+                    name: err.name,
+                    stack: err.stack,
+                });
+                
                 if (err instanceof SharePointAuthError) {
                     setRequiresAuth(true);
                     setError(err.message);
                 } else {
-                    setError(err.message || 'Failed to load employee data. Please try again.');
+                    // Provide more helpful error messages
+                    let errorMessage = err.message || 'Failed to load employee data. Please try again.';
+                    
+                    // Check for common issues
+                    if (errorMessage.includes('Failed to fetch') || errorMessage.includes('CORS')) {
+                        errorMessage = `Network error: Unable to connect to SharePoint. ` +
+                            `Please check:\n` +
+                            `1. Are you signed into SharePoint in this browser?\n` +
+                            `2. Are the environment variables set correctly in Vercel?\n` +
+                            `3. Try refreshing the page or signing into SharePoint first.`;
+                    } else if (errorMessage.includes('not configured')) {
+                        errorMessage = `Configuration error: ${errorMessage}\n` +
+                            `Please set the NEXT_PUBLIC_ONEDRIVE_* environment variables in Vercel.`;
+                    }
+                    
+                    setError(errorMessage);
                 }
             } finally {
                 setInitialLoading(false);

@@ -59,30 +59,64 @@ NEXT_PUBLIC_OPENASSET_BASE_URL=https://perkinseastman.openasset.com
 5. Return to app tab → Click "I've Signed In - Retry Now"
 6. App should now work! ✅
 
-## How to Check Environment Variables
+## How to Set Environment Variables in Vercel
 
-### Method 1: Vercel Dashboard (Recommended)
+### Step-by-Step Instructions
 
-1. Go to [vercel.com](https://vercel.com) and sign in
-2. Select your project (e.g., `POCL`)
-3. Click **Settings** (gear icon in top navigation)
-4. Click **Environment Variables** in the left sidebar
-5. You should see these variables listed:
-   - ✅ `ONEDRIVE_EMPLOYEES_URL`
-   - ✅ `ONEDRIVE_PROJECTS_URL`
-   - ✅ `ONEDRIVE_PROJECT_EMPLOYEES_URL`
-   - (Optional) `NEXT_PUBLIC_SHAREPOINT_URL`
-   - (Optional) `OPENASSET_BASE_URL`
+1. **Go to Vercel Dashboard**
+   - Visit [vercel.com](https://vercel.com) and sign in with your GitHub account
 
-**Important:** Make sure each variable is set for:
-- ✅ **Production** (for live site)
-- ✅ **Preview** (for preview deployments)
-- ✅ **Development** (optional, for local dev)
+2. **Select Your Project**
+   - Click on your project name (e.g., `POCL`)
 
-**To add/edit variables:**
-- Click on a variable name to edit
-- Or click **"Add New"** to create a new one
-- Make sure to select the right **Environment** (Production/Preview/Development)
+3. **Navigate to Settings**
+   - Click **Settings** (gear icon) in the top navigation bar
+
+4. **Open Environment Variables**
+   - Click **Environment Variables** in the left sidebar
+
+5. **Add Each Variable**
+   For each variable below, click **"Add New"** and fill in:
+   
+   **Variable Name:** `NEXT_PUBLIC_ONEDRIVE_EMPLOYEES_URL`  
+   **Value:** `https://perkinseastman-my.sharepoint.com/.../employees.csv?download=1`  
+   **Environment:** Select **Production**, **Preview**, and **Development** (check all three)  
+   Click **Save**
+   
+   **Variable Name:** `NEXT_PUBLIC_ONEDRIVE_PROJECTS_URL`  
+   **Value:** `https://perkinseastman-my.sharepoint.com/.../projects.csv?download=1`  
+   **Environment:** Select **Production**, **Preview**, and **Development**  
+   Click **Save**
+   
+   **Variable Name:** `NEXT_PUBLIC_ONEDRIVE_PROJECT_EMPLOYEES_URL`  
+   **Value:** `https://perkinseastman-my.sharepoint.com/.../project_employees.csv?download=1`  
+   **Environment:** Select **Production**, **Preview**, and **Development**  
+   Click **Save**
+
+6. **Optional Variables** (if needed):
+   
+   **Variable Name:** `NEXT_PUBLIC_OPENASSET_BASE_URL`  
+   **Value:** `https://perkinseastman.openasset.com`  
+   **Environment:** Select **Production**, **Preview**, and **Development**  
+   Click **Save**
+
+7. **Redeploy**
+   - After adding variables, go to **Deployments** tab
+   - Click the **"..."** menu on the latest deployment
+   - Click **"Redeploy"** to apply the new environment variables
+
+### How to Check Environment Variables
+
+After setting them, you should see these variables listed:
+   - ✅ `NEXT_PUBLIC_ONEDRIVE_EMPLOYEES_URL`
+   - ✅ `NEXT_PUBLIC_ONEDRIVE_PROJECTS_URL`
+   - ✅ `NEXT_PUBLIC_ONEDRIVE_PROJECT_EMPLOYEES_URL`
+   - (Optional) `NEXT_PUBLIC_OPENASSET_BASE_URL`
+
+**Important Notes:**
+- ⚠️ **MUST use `NEXT_PUBLIC_` prefix** - This is required for client-side access
+- ✅ Select **all three environments** (Production, Preview, Development) when adding
+- 🔄 **Redeploy after adding** - Environment variables only apply to new deployments
 
 ### Method 2: Using the Test Auth Endpoint
 

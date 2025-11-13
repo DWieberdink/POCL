@@ -71,57 +71,114 @@ function prepareDownloadUrl(url: string): string {
 }
 
 /**
+ * Fetch CSV file via proxy API (bypasses CORS)
+ * Falls back to direct fetch if proxy fails
+ */
+async function fetchCSVViaProxy(fileType: 'employees' | 'projects' | 'project_employees'): Promise<string> {
+  console.log('[Client CSV Loader] Fetching via proxy API:', fileType);
+  
+  const response = await fetch(`/api/proxy-csv?type=${fileType}`, {
+    method: 'GET',
+    credentials: 'include',
+    cache: 'no-store',
+  });
+
+  if (response.status === 401) {
+    const data = await response.json();
+    if (data.requiresAuth) {
+      throw new SharePointAuthError('Authentication required. Please sign in with your Microsoft 365 account to access this data.');
+    }
+  }
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to fetch CSV via proxy: ${response.status} ${errorText}`);
+  }
+
+  return await response.text();
+}
+
+/**
  * Fetch CSV file directly from SharePoint (client-side)
  * Browser cookies will be automatically sent to SharePoint domain
+ * NOTE: This may fail due to CORS restrictions
  */
 export async function fetchCSVFromSharePoint(url: string): Promise<string> {
   const downloadUrl = prepareDownloadUrl(url);
   
   console.log('[Client CSV Loader] Fetching CSV from:', downloadUrl.substring(0, 100) + '...');
+  console.log('[Client CSV Loader] Full URL:', downloadUrl);
 
-  const response = await fetch(downloadUrl, {
-    method: 'GET',
-    credentials: 'include', // Include cookies for SharePoint authentication
-    cache: 'no-store', // Don't cache CSV files
-    redirect: 'follow',
-    headers: {
-      'Accept': 'text/csv,text/plain,*/*',
-    }
-  });
+  try {
+    const response = await fetch(downloadUrl, {
+      method: 'GET',
+      credentials: 'include', // Include cookies for SharePoint authentication
+      cache: 'no-store', // Don't cache CSV files
+      redirect: 'follow',
+      mode: 'cors', // Explicitly set CORS mode
+      headers: {
+        'Accept': 'text/csv,text/plain,*/*',
+      }
+    });
 
-  console.log('[Client CSV Loader] Response status:', response.status, response.statusText);
-  
-  // Check for authentication errors (401, 403) or redirects to login
-  if (response.status === 401 || response.status === 403) {
-    console.log('[Client CSV Loader] Authentication error:', response.status);
-    throw new SharePointAuthError('Authentication required. Please sign in with your Microsoft 365 account to access this data.');
-  }
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.log('[Client CSV Loader] Error response (first 200 chars):', errorText.substring(0, 200));
+    console.log('[Client CSV Loader] Response status:', response.status, response.statusText);
+    console.log('[Client CSV Loader] Response headers:', Object.fromEntries(response.headers.entries()));
     
-    // Check if we got HTML instead of CSV (likely a login page)
-    if (errorText.includes('<html') || errorText.includes('<!DOCTYPE') || 
-        errorText.includes('Sign in') || errorText.includes('Microsoft account')) {
-      console.log('[Client CSV Loader] Detected HTML login page');
+    // Check for authentication errors (401, 403) or redirects to login
+    if (response.status === 401 || response.status === 403) {
+      console.log('[Client CSV Loader] Authentication error:', response.status);
       throw new SharePointAuthError('Authentication required. Please sign in with your Microsoft 365 account to access this data.');
     }
-    throw new Error(`Failed to download CSV: ${response.status} ${response.statusText}`);
-  }
 
-  const content = await response.text();
-  console.log('[Client CSV Loader] Successfully downloaded CSV (length:', content.length, 'chars)');
-  
-  // Check if response is HTML (authentication/login page)
-  if (content.trim().startsWith('<!DOCTYPE') || content.trim().startsWith('<html') || 
-      content.includes('<!-- Copyright (C) Microsoft Corporation') ||
-      content.includes('Sign in') || content.includes('Microsoft account')) {
-    console.log('[Client CSV Loader] Response is HTML login page, not CSV');
-    throw new SharePointAuthError('Authentication required. Please sign in with your Microsoft 365 account to access this data.');
-  }
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.log('[Client CSV Loader] Error response (first 200 chars):', errorText.substring(0, 200));
+      
+      // Check if we got HTML instead of CSV (likely a login page)
+      if (errorText.includes('<html') || errorText.includes('<!DOCTYPE') || 
+          errorText.includes('Sign in') || errorText.includes('Microsoft account')) {
+        console.log('[Client CSV Loader] Detected HTML login page');
+        throw new SharePointAuthError('Authentication required. Please sign in with your Microsoft 365 account to access this data.');
+      }
+      throw new Error(`Failed to download CSV: ${response.status} ${response.statusText}`);
+    }
 
-  return content;
+    const content = await response.text();
+    console.log('[Client CSV Loader] Successfully downloaded CSV (length:', content.length, 'chars)');
+    
+    // Check if response is HTML (authentication/login page)
+    if (content.trim().startsWith('<!DOCTYPE') || content.trim().startsWith('<html') || 
+        content.includes('<!-- Copyright (C) Microsoft Corporation') ||
+        content.includes('Sign in') || content.includes('Microsoft account')) {
+      console.log('[Client CSV Loader] Response is HTML login page, not CSV');
+      throw new SharePointAuthError('Authentication required. Please sign in with your Microsoft 365 account to access this data.');
+    }
+
+    return content;
+  } catch (error: any) {
+    // Handle network/CORS errors
+    if (error instanceof SharePointAuthError) {
+      throw error;
+    }
+    
+    // Check for CORS errors
+    if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError') || 
+        error.name === 'TypeError' || error.message?.includes('CORS')) {
+      console.error('[Client CSV Loader] CORS/Network error:', error);
+      throw new Error(
+        `Failed to fetch CSV from SharePoint. This may be a CORS issue. ` +
+        `Please ensure:\n` +
+        `1. You are signed into SharePoint in this browser\n` +
+        `2. The CSV file URL is correct\n` +
+        `3. The file is shared as "People in org" (not "Anyone")\n` +
+        `Error: ${error.message}`
+      );
+    }
+    
+    // Re-throw other errors
+    console.error('[Client CSV Loader] Unexpected error:', error);
+    throw new Error(`Failed to fetch CSV: ${error.message || 'Unknown error'}`);
+  }
 }
 
 /**
@@ -158,17 +215,62 @@ export async function loadAllCSVData(): Promise<{
   const projectsUrl = process.env.NEXT_PUBLIC_ONEDRIVE_PROJECTS_URL;
   const projectEmployeesUrl = process.env.NEXT_PUBLIC_ONEDRIVE_PROJECT_EMPLOYEES_URL;
 
+  console.log('[Client CSV Loader] Environment check:', {
+    hasEmployeesUrl: !!employeesUrl,
+    hasProjectsUrl: !!projectsUrl,
+    hasProjectEmployeesUrl: !!projectEmployeesUrl,
+    employeesUrlLength: employeesUrl?.length || 0,
+  });
+
   if (!employeesUrl || !projectsUrl || !projectEmployeesUrl) {
-    throw new Error('OneDrive URLs are not configured. Please set NEXT_PUBLIC_ONEDRIVE_* environment variables.');
+    const missing = [];
+    if (!employeesUrl) missing.push('NEXT_PUBLIC_ONEDRIVE_EMPLOYEES_URL');
+    if (!projectsUrl) missing.push('NEXT_PUBLIC_ONEDRIVE_PROJECTS_URL');
+    if (!projectEmployeesUrl) missing.push('NEXT_PUBLIC_ONEDRIVE_PROJECT_EMPLOYEES_URL');
+    
+    throw new Error(
+      `OneDrive URLs are not configured. Missing: ${missing.join(', ')}. ` +
+      `Please set these environment variables in Vercel with the NEXT_PUBLIC_ prefix.`
+    );
   }
 
   try {
-    // Fetch all CSV files in parallel
-    const [employeesContent, projectsContent, projectEmployeesContent] = await Promise.all([
-      fetchCSVFromSharePoint(employeesUrl),
-      fetchCSVFromSharePoint(projectsUrl),
-      fetchCSVFromSharePoint(projectEmployeesUrl),
-    ]);
+    // Try fetching via proxy API first (bypasses CORS)
+    // If that fails, fall back to direct fetch
+    console.log('[Client CSV Loader] Starting parallel fetch of all CSV files...');
+    
+    let employeesContent: string;
+    let projectsContent: string;
+    let projectEmployeesContent: string;
+
+    try {
+      // Try proxy first (works even with CORS restrictions)
+      console.log('[Client CSV Loader] Attempting to fetch via proxy API...');
+      [employeesContent, projectsContent, projectEmployeesContent] = await Promise.all([
+        fetchCSVViaProxy('employees'),
+        fetchCSVViaProxy('projects'),
+        fetchCSVViaProxy('project_employees'),
+      ]);
+      console.log('[Client CSV Loader] Successfully fetched via proxy API');
+    } catch (proxyError: any) {
+      console.log('[Client CSV Loader] Proxy fetch failed, trying direct fetch:', proxyError.message);
+      
+      // Fall back to direct fetch (may fail due to CORS)
+      [employeesContent, projectsContent, projectEmployeesContent] = await Promise.all([
+        fetchCSVFromSharePoint(employeesUrl).catch(err => {
+          console.error('[Client CSV Loader] Failed to fetch employees.csv:', err);
+          throw new Error(`Failed to fetch employees.csv: ${err.message}`);
+        }),
+        fetchCSVFromSharePoint(projectsUrl).catch(err => {
+          console.error('[Client CSV Loader] Failed to fetch projects.csv:', err);
+          throw new Error(`Failed to fetch projects.csv: ${err.message}`);
+        }),
+        fetchCSVFromSharePoint(projectEmployeesUrl).catch(err => {
+          console.error('[Client CSV Loader] Failed to fetch project_employees.csv:', err);
+          throw new Error(`Failed to fetch project_employees.csv: ${err.message}`);
+        }),
+      ]);
+    }
 
     // Parse CSV files
     const employees = parseCSV<Employee>(employeesContent);
