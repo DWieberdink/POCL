@@ -400,11 +400,27 @@ export default function EmployeeDirectory() {
 
                 <main className="main">
                     <div className="container">
-                        <AuthRequired onRetry={() => {
+                        <AuthRequired onRetry={async () => {
                             setRequiresAuth(false);
                             setError('');
-                            // Retry loading options
-                            window.location.reload();
+                            // Retry loading options and data
+                            try {
+                                const [practiceRes, subPracticeRes] = await Promise.all([
+                                    fetch('/api/practice-areas'),
+                                    fetch('/api/sub-practice-areas')
+                                ]);
+                                
+                                if (practiceRes.status === 401 || subPracticeRes.status === 401) {
+                                    setRequiresAuth(true);
+                                    return;
+                                }
+                                
+                                // If successful, reload the page to get fresh data
+                                window.location.reload();
+                            } catch (error) {
+                                console.error('Retry failed:', error);
+                                window.location.reload();
+                            }
                         }} />
                     </div>
                 </main>
