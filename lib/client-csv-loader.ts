@@ -75,27 +75,42 @@ function prepareDownloadUrl(url: string): string {
  * Falls back to direct fetch if proxy fails
  */
 async function fetchCSVViaProxy(fileType: 'employees' | 'projects' | 'project_employees'): Promise<string> {
-  console.log('[Client CSV Loader] Fetching via proxy API:', fileType);
+  const proxyUrl = `/api/proxy-csv?type=${fileType}`;
+  console.log('[Client CSV Loader] Fetching via proxy API:', fileType, 'URL:', proxyUrl);
   
-  const response = await fetch(`/api/proxy-csv?type=${fileType}`, {
-    method: 'GET',
-    credentials: 'include',
-    cache: 'no-store',
-  });
+  try {
+    const response = await fetch(proxyUrl, {
+      method: 'GET',
+      credentials: 'include',
+      cache: 'no-store',
+    });
 
-  if (response.status === 401) {
-    const data = await response.json();
-    if (data.requiresAuth) {
+    console.log('[Client CSV Loader] Proxy response status:', response.status, response.statusText);
+
+    if (response.status === 401) {
+      const data = await response.json().catch(() => ({}));
+      if (data.requiresAuth) {
+        throw new SharePointAuthError('Authentication required. Please sign in with your Microsoft 365 account to access this data.');
+      }
       throw new SharePointAuthError('Authentication required. Please sign in with your Microsoft 365 account to access this data.');
     }
-  }
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Failed to fetch CSV via proxy: ${response.status} ${errorText}`);
-  }
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      console.error('[Client CSV Loader] Proxy error response:', errorText);
+      throw new Error(`Failed to fetch CSV via proxy: ${response.status} ${response.statusText}. ${errorText}`);
+    }
 
-  return await response.text();
+    const content = await response.text();
+    console.log('[Client CSV Loader] ✅ Successfully fetched', fileType, 'via proxy (length:', content.length, 'chars)');
+    return content;
+  } catch (error: any) {
+    console.error('[Client CSV Loader] ❌ Proxy fetch error for', fileType, ':', error);
+    if (error instanceof SharePointAuthError) {
+      throw error;
+    }
+    throw new Error(`Proxy fetch failed for ${fileType}: ${error.message || 'Unknown error'}`);
+  }
 }
 
 /**
@@ -235,41 +250,40 @@ export async function loadAllCSVData(): Promise<{
   }
 
   try {
-    // Try fetching via proxy API first (bypasses CORS)
-    // If that fails, fall back to direct fetch
-    console.log('[Client CSV Loader] Starting parallel fetch of all CSV files...');
+    // Use proxy API to bypass CORS (server-side fetch)
+    console.log('[Client CSV Loader] Starting parallel fetch of all CSV files via proxy API...');
     
     let employeesContent: string;
     let projectsContent: string;
     let projectEmployeesContent: string;
 
     try {
-      // Try proxy first (works even with CORS restrictions)
-      console.log('[Client CSV Loader] Attempting to fetch via proxy API...');
+      // Use proxy API (bypasses CORS by fetching server-side)
+      console.log('[Client CSV Loader] Fetching via proxy API (/api/proxy-csv)...');
       [employeesContent, projectsContent, projectEmployeesContent] = await Promise.all([
         fetchCSVViaProxy('employees'),
         fetchCSVViaProxy('projects'),
         fetchCSVViaProxy('project_employees'),
       ]);
-      console.log('[Client CSV Loader] Successfully fetched via proxy API');
+      console.log('[Client CSV Loader] ✅ Successfully fetched all CSV files via proxy API');
     } catch (proxyError: any) {
-      console.log('[Client CSV Loader] Proxy fetch failed, trying direct fetch:', proxyError.message);
+      console.error('[Client CSV Loader] ❌ Proxy fetch failed:', proxyError);
+      console.error('[Client CSV Loader] Proxy error details:', {
+        message: proxyError.message,
+        name: proxyError.name,
+        stack: proxyError.stack,
+      });
       
-      // Fall back to direct fetch (may fail due to CORS)
-      [employeesContent, projectsContent, projectEmployeesContent] = await Promise.all([
-        fetchCSVFromSharePoint(employeesUrl).catch(err => {
-          console.error('[Client CSV Loader] Failed to fetch employees.csv:', err);
-          throw new Error(`Failed to fetch employees.csv: ${err.message}`);
-        }),
-        fetchCSVFromSharePoint(projectsUrl).catch(err => {
-          console.error('[Client CSV Loader] Failed to fetch projects.csv:', err);
-          throw new Error(`Failed to fetch projects.csv: ${err.message}`);
-        }),
-        fetchCSVFromSharePoint(projectEmployeesUrl).catch(err => {
-          console.error('[Client CSV Loader] Failed to fetch project_employees.csv:', err);
-          throw new Error(`Failed to fetch project_employees.csv: ${err.message}`);
-        }),
-      ]);
+      // Don't fall back to direct fetch - it will fail due to CORS
+      // Instead, provide a helpful error message
+      throw new Error(
+        `Failed to fetch CSV files via proxy API: ${proxyError.message}. ` +
+        `This may be due to:\n` +
+        `1. Environment variables not set correctly in Vercel\n` +
+        `2. Proxy endpoint not deployed yet\n` +
+        `3. Authentication required - please sign into SharePoint\n` +
+        `Check browser console and Vercel logs for more details.`
+      );
     }
 
     // Parse CSV files
