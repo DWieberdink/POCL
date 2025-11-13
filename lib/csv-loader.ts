@@ -84,7 +84,12 @@ async function downloadFromSharePointDirect(url: string, cookieHeader?: string):
   // This allows SharePoint to authenticate the user based on their browser session
   if (cookieHeader) {
     headers['Cookie'] = cookieHeader;
+    console.log('[CSV Loader] Forwarding cookies to SharePoint (length:', cookieHeader.length, 'chars)');
+  } else {
+    console.log('[CSV Loader] No cookies provided - request will likely require authentication');
   }
+  
+  console.log('[CSV Loader] Fetching CSV from:', downloadUrl.substring(0, 100) + '...');
 
   const response = await fetch(downloadUrl, {
     headers,
@@ -92,27 +97,35 @@ async function downloadFromSharePointDirect(url: string, cookieHeader?: string):
     redirect: 'follow'
   });
 
+  console.log('[CSV Loader] Response status:', response.status, response.statusText);
+  
   // Check for authentication errors (401, 403) or redirects to login
   if (response.status === 401 || response.status === 403) {
+    console.log('[CSV Loader] Authentication error:', response.status);
     throw new SharePointAuthError('Authentication required. Please sign in with your Microsoft 365 account to access this data.');
   }
 
   if (!response.ok) {
     const errorText = await response.text();
+    console.log('[CSV Loader] Error response (first 200 chars):', errorText.substring(0, 200));
+    
     // Check if we got HTML instead of CSV (likely a login page)
     if (errorText.includes('<html') || errorText.includes('<!DOCTYPE') || 
         errorText.includes('Sign in') || errorText.includes('Microsoft account')) {
+      console.log('[CSV Loader] Detected HTML login page');
       throw new SharePointAuthError('Authentication required. Please sign in with your Microsoft 365 account to access this data.');
     }
     throw new Error(`Failed to download CSV: ${response.status} ${response.statusText}`);
   }
 
   const content = await response.text();
+  console.log('[CSV Loader] Successfully downloaded CSV (length:', content.length, 'chars)');
   
   // Check if response is HTML (authentication/login page)
   if (content.trim().startsWith('<!DOCTYPE') || content.trim().startsWith('<html') || 
       content.includes('<!-- Copyright (C) Microsoft Corporation') ||
       content.includes('Sign in') || content.includes('Microsoft account')) {
+    console.log('[CSV Loader] Response is HTML login page, not CSV');
     throw new SharePointAuthError('Authentication required. Please sign in with your Microsoft 365 account to access this data.');
   }
 

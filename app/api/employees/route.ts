@@ -43,6 +43,17 @@ export async function GET(request: NextRequest) {
     // Forward cookies from browser request to SharePoint for authentication
     // CSV files should be shared as "People in <YourOrg> with the link" NOT "Anyone with the link"
     const cookieHeader = request.headers.get('cookie') || undefined;
+    
+    // Debug logging
+    if (cookieHeader) {
+      console.log('[API] Received cookies from browser (length:', cookieHeader.length, 'chars)');
+      // Log cookie names (not values for security)
+      const cookieNames = cookieHeader.split(';').map(c => c.split('=')[0].trim()).filter(Boolean);
+      console.log('[API] Cookie names:', cookieNames.join(', '));
+    } else {
+      console.log('[API] No cookies received from browser');
+    }
+    
     await ensureDataLoaded(cookieHeader);
     
     const searchParams = request.nextUrl.searchParams;
